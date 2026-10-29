@@ -5,11 +5,17 @@
   <section class="sheet">
     <h2>Worker {{ cfg.worker_name }}</h2>
     <p>{{ status }}</p>
-    <label style="margin-top:14px">Protected routes</label>
-    <ul class="plain mono">{% for pattern, _, _ in routes %}<li>{{ pattern }}</li>{% else %}<li class="hint">None yet. Add them in the config panel.</li>{% endfor %}</ul>
+    <label style="margin-top:14px">Routes by site</label>
+    <ul class="plain">
+      {% for site, routes in site_routes %}
+        <li><b>{{ site.name }}</b>: <span class="mono">{% for pattern, _, _ in routes %}{{ pattern }}{% if not loop.last %}, {% endif %}{% else %}none{% endfor %}</span></li>
+      {% else %}
+        <li class="hint">No active site yet. <a href="{{ url_for('admin.sites_page') }}">Add a site</a>.</li>
+      {% endfor %}
+    </ul>
     <form method="post" action="{{ url_for('admin.deploy_worker') }}" style="margin-top:16px">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button type="submit" class="btn" {% if not cfg.cloudflare_ready or not routes %}disabled{% endif %}>Deploy the Worker</button>
+      <button type="submit" class="btn" {% if not cfg.cloudflare_ready or not has_routes %}disabled{% endif %}>Deploy the Worker</button>
     </form>
     {% if not cfg.cloudflare_ready %}<p class="hint" style="margin-top:10px">Add a Cloudflare API token and account ID in the config panel to deploy from here.</p>{% endif %}
   </section>
@@ -31,6 +37,6 @@
      Every request the Worker forwards carries an <span class="mono">X-Paywall-Origin-Key</span> header, so make the origin refuse requests without it.
      For an app on YunoHost, put this line in a file included from the app's nginx <span class="mono">location</span> block, so that upgrades do not overwrite it:</p>
   <pre>if ($http_x_paywall_origin_key != "{{ cfg.origin_secret }}") { return 403; }</pre>
-  <p class="hint">Settings passed to the Worker: {% for k, v in worker_vars.items() %}<span class="mono">{{ k }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  <p class="hint">Settings passed to the Worker: {% for k, v in worker_vars.items() %}<span class="mono">{{ k }}</span>{% if not loop.last %}, {% endif %}{% endfor %}. Each site has its own access cookie, so access to one site never opens another.</p>
 </section>
 {% endblock %}

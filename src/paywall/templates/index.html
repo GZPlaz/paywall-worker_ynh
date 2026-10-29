@@ -2,21 +2,21 @@
 {% block content %}
 <section class="window">
   {% include "_notices.html" %}
-  <h1>{{ cfg.paywall_title }}</h1>
-  <p class="lede">{{ cfg.paywall_description }}</p>
+  <h1>{{ site.title }}</h1>
+  {% if site.description %}<p class="lede">{{ site.description }}</p>{% endif %}
 
   <div class="aside">
-    {% if cfg.show_codes_field %}
+    {% if site.show_codes %}
       {% if code %}
         <div class="voucher">
           <span><b>{{ code.code }}</b><br>{{ code_summary }}</span>
-          <form method="post" action="{{ url_for('clear_code') }}" class="inline">
+          <form method="post" action="{{ url_for('clear_code', site_id=site.id) }}" class="inline">
             <input type="hidden" name="csrf" value="{{ csrf_token() }}">
             <button class="btn quiet small" type="submit">Remove</button>
           </form>
         </div>
       {% else %}
-        <form method="post" action="{{ url_for('redeem_code') }}">
+        <form method="post" action="{{ url_for('redeem_code', site_id=site.id) }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <label for="code">Discount or access code</label>
           <div class="inline-form">
@@ -41,11 +41,11 @@
     <div class="stub plain"><p class="state bad">Online payment is not set up yet. Codes still work.</p></div>
   {% endif %}
   {% for offer in offers %}
-    <form class="stub" method="post" action="{{ url_for('checkout') }}">
+    <form class="stub" method="post" action="{{ url_for('checkout', site_id=site.id) }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="plan" value="{{ offer.plan.id }}">
       <h2>{{ offer.plan.name }}</h2>
-      <p class="terms">{{ offer.terms }}</p>
+      <p class="terms">{{ offer.terms }}{% if offer.also %}<br>Also opens {{ offer.also|join(', ') }}{% endif %}</p>
       <p class="price">
         {% if offer.was %}<s>{{ offer.was }}</s>{% endif %}
         {{ offer.big }}

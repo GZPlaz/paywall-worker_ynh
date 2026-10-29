@@ -1,0 +1,29 @@
+{% extends "admin/base.html" %}
+{% block title %}Sites{% endblock %}
+{% block content %}
+<section class="sheet">
+  <div class="sheet-head">
+    <h2>Sites</h2>
+    <a class="btn small" href="{{ url_for('admin.new_site') }}">Add a site</a>
+  </div>
+  <p class="hint" style="margin-bottom:14px">Each site has its own paywall page, routes and settings. Offers, codes and access can be linked to several sites at once.</p>
+  <div class="table-wrap"><table class="data">
+    <tr><th>Site</th><th>Routes</th><th>Paywall page</th><th class="num">Offers</th><th>State</th><th></th></tr>
+    {% for s in sites %}
+      <tr>
+        <td><a href="{{ url_for('admin.edit_site', site_id=s.id) }}"><b>{{ s.name }}</b></a><br><span class="hint mono">{{ s.id }}</span></td>
+        <td class="mono">{% for pattern, _, _ in s.route_list %}{{ pattern }}<br>{% else %}<span class="hint">none</span>{% endfor %}</td>
+        <td>{{ s.title }}<br><a class="hint" href="{{ url_for('site_page', site_id=s.id, stay=1) }}" target="_blank" rel="noopener">/s/{{ s.id }}</a></td>
+        <td class="num">{{ offer_counts.get(s.id, 0) }}</td>
+        <td>{% if s.active %}<span class="state ok">on</span>{% else %}<span class="state off">off</span>{% endif %}</td>
+        <td class="acts">
+          <a class="btn quiet small" href="{{ url_for('admin.edit_site', site_id=s.id) }}">Edit</a>
+          <a class="btn quiet small" href="{{ url_for('admin.new_site', copy=s.id) }}">Duplicate</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="hint">No sites yet. Add one for each website you want to put behind the paywall.</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

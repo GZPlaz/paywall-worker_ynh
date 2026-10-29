@@ -1,0 +1,17 @@
+{#- Site checkboxes, used wherever one thing can be linked to several sites. -#}
+{%- macro site_checks(sites, checked=(), legend="Sites", hint=None, name="sites") -%}
+<fieldset class="checks span site-checks">
+  <legend>{{ legend }}</legend>
+  {% if sites %}
+    {% for s in sites %}
+      <label><input type="checkbox" name="{{ name }}" value="{{ s.id }}" {% if s.id in checked %}checked{% endif %}> {{ s.name }}{% if not s.active %} <span class="hint">(off)</span>{% endif %}</label>
+    {% endfor %}
+    {% if sites|length > 2 %}
+      <button type="button" class="linkish small-link" data-check-all>Tick all</button>
+    {% endif %}
+  {% else %}
+    <span class="hint">No sites yet. <a href="{{ url_for('admin.new_site') }}">Add a site</a> first.</span>
+  {% endif %}
+  {% if hint %}<p class="hint">{{ hint }}</p>{% endif %}
+</fieldset>
+{%- endmacro -%}

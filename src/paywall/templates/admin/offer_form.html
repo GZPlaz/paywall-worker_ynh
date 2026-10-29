@@ -1,0 +1,55 @@
+{% extends "admin/base.html" %}
+{% from "admin/_fields.html" import site_checks %}
+{% block title %}{{ plan.name if plan else "New offer" }}{% endblock %}
+{% block content %}
+<form class="sheet" method="post" action="{{ url_for('admin.save_offer', offer_id=plan.id) if plan else url_for('admin.save_offer') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>{% if plan %}{{ plan.name }}{% else %}New offer{% endif %}</h2>
+  <div class="fields">
+    <div><label for="name">Name shown to visitors</label><input id="name" name="name" value="{{ values.name or '' }}" required placeholder="All-access pass"></div>
+    <div>
+      <label for="kind">Kind</label>
+      <select id="kind" name="kind">
+        {% for key, label in kinds.items() %}<option value="{{ key }}" {% if values.kind == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label for="price"><span data-kind="one_time subscription pass">Price</span><span data-kind="pwyw">Minimum price</span> ({{ cfg.currency|upper }})</label><input id="price" name="price" inputmode="decimal" value="{{ values.price or '' }}" required></div>
+    <div data-kind="pwyw"><label for="suggested">Suggested price</label><input id="suggested" name="suggested" inputmode="decimal" value="{{ values.suggested or '' }}"></div>
+    <div data-kind="subscription">
+      <label for="interval">Billed every</label>
+      <select id="interval" name="interval">{% for i in intervals %}<option value="{{ i }}" {% if values.interval == i %}selected{% endif %}>{{ i }}</option>{% endfor %}</select>
+    </div>
+    <div data-kind="subscription"><label for="trial_days">Free trial (days)</label><input id="trial_days" name="trial_days" type="number" min="0" value="{{ values.trial_days or 0 }}"></div>
+    <div data-kind="one_time pwyw"><label for="access_days">Access length (days)</label><input id="access_days" name="access_days" type="number" min="1" value="{{ values.access_days or '' }}" placeholder="No end date"></div>
+    <div data-kind="pass"><label for="pass_hours">Pass length (hours)</label><input id="pass_hours" name="pass_hours" type="number" min="1" value="{{ values.pass_hours or 24 }}"></div>
+    <div><label for="position">Order on the page</label><input id="position" name="position" type="number" value="{{ values.position or 0 }}"></div>
+    {{ site_checks(sites, linked_sites, legend="Sold on and opens these sites", hint="Tick several sites to sell one offer that opens all of them.") }}
+    {% if plan %}
+      <div class="span checks"><label><input type="checkbox" name="extend_holders" value="1" checked> People who already have this offer also get the sites you add</label></div>
+    {% endif %}
+    <div class="span checks"><label><input type="checkbox" name="active" value="1" {% if values.active %}checked{% endif %}> On sale</label></div>
+  </div>
+  <p style="margin-top:20px"><button type="submit" class="btn">{% if plan %}Save the offer{% else %}Create the offer{% endif %}</button>
+    <a href="{{ url_for('admin.offers_page') }}" style="margin-left:12px">Cancel</a></p>
+</form>
+{% if plan %}
+<form class="sheet" method="post" action="{{ url_for('admin.delete_offer', offer_id=plan.id) }}" onsubmit="return confirm('Delete {{ plan.name }}?')">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Delete this offer</h2>
+  <p class="hint">People who bought it keep their access. To stop selling it but keep it here, untick "On sale" instead.</p>
+  <p style="margin-top:12px"><button class="btn danger small" type="submit">Delete {{ plan.name }}</button></p>
+</form>
+{% endif %}
+<script>
+  (function () {
+    var kind = document.getElementById("kind");
+    function sync() {
+      document.querySelectorAll("[data-kind]").forEach(function (el) {
+        el.classList.toggle("hidden", el.getAttribute("data-kind").split(" ").indexOf(kind.value) === -1);
+      });
+    }
+    kind.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

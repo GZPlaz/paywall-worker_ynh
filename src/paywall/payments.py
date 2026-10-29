@@ -2,7 +2,7 @@
 
 import logging
 
-from . import access, codes, plans
+from . import access, codes, legacy, plans
 from .stripe_client import Stripe, StripeError, subscription_period_end
 
 log = logging.getLogger(__name__)
@@ -45,9 +45,10 @@ def stripe_coupon(db, cfg, code_row, stripe=None):
     return coupon["id"]
 
 
-def create_checkout(db, cfg, plan, customer, email=None, code_row=None, custom_amount=None, return_url=None,
+def create_checkout(db, cfg, plan, customer, site, code_row=None, custom_amount=None, return_url=None,
                     stripe=None):
-    """Create a Stripe Checkout session and return its URL."""
+    """Create a Stripe Checkout session for ``plan`` bought from ``site`` and
+    return its URL. Access is granted to every site linked to the offer."""
     if not cfg.stripe_ready:
         raise PaymentError("Online payments are not configured yet.")
     stripe = stripe or client(cfg)
@@ -57,8 +58,11 @@ def create_checkout(db, cfg, plan, customer, email=None, code_row=None, custom_a
         code_row = None  # discounts make no sense when you choose the price
     metadata = {
         "paywall_instance": cfg.instance_id,
-        "plan": plan.id,
-        "paywall_customer": customer["id"] if customer else "",
+        "offer": plan.id,
+        "kind": plan.kind,
+        "site": site.id,
+        "sites": ",".join(plan.site_ids),
+        "paywall_customer": customer["id"],
         "code": code_row["code"] if code_row else "",
         "access_seconds": "" if plan.access_seconds is None else str(plan.access_seconds),
         "return_url": return_url or "",
@@ -66,7 +70,7 @@ def create_checkout(db, cfg, plan, customer, email=None, code_row=None, custom_a
     price_data = {
         "currency": cfg["currency"],
         "unit_amount": amount,
-        "product_data": {"name": f"{cfg['paywall_title']} - {plan.name}"[:250]},
+        "product_data": {"name": f"{site.title} - {plan.name}"[:250]},
     }
     if plan.is_subscription:
         price_data["recurring"] = {"interval": plan.interval}
@@ -74,15 +78,14 @@ def create_checkout(db, cfg, plan, customer, email=None, code_row=None, custom_a
         "mode": plan.mode,
         "line_items": [{"price_data": price_data, "quantity": 1}],
         "success_url": f"{cfg.public_url}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}",
-        "cancel_url": f"{cfg.public_url}/",
+        "cancel_url": f"{cfg.public_url}/s/{site.id}",
         "metadata": metadata,
+        "client_reference_id": customer["id"],
     }
-    if customer:
-        params["client_reference_id"] = customer["id"]
-    if customer and customer["stripe_customer_id"]:
+    if customer["stripe_customer_id"]:
         params["customer"] = customer["stripe_customer_id"]
-    elif email or (customer and customer["email"]):
-        params["customer_email"] = email or customer["email"]
+    elif customer["email"]:
+        params["customer_email"] = customer["email"]
     if plan.is_subscription:
         params["subscription_data"] = {"metadata": metadata}
         if plan.trial_days:
@@ -97,6 +100,20 @@ def create_checkout(db, cfg, plan, customer, email=None, code_row=None, custom_a
     except StripeError as exc:
         raise PaymentError(str(exc)) from exc
     return session["url"]
+
+
+def _sites_from(metadata):
+    linked = [s for s in (metadata.get("sites") or "").split(",") if s]
+    if not linked and metadata.get("site"):
+        linked = [metadata["site"]]
+    if not linked:  # checkout started before the multi-site upgrade
+        linked = [legacy.MAIN_SITE]
+    return linked
+
+
+def _offer_id(metadata):
+    value = metadata.get("offer") or ""
+    return int(value) if value.isdigit() else None
 
 
 def fulfill_checkout(db, cfg, session, stripe=None):
@@ -117,7 +134,6 @@ def fulfill_checkout(db, cfg, session, stripe=None):
         customer_id = access.create_customer(db)["id"]
     customer = access.attach_details(db, customer_id, email, stripe_customer)
     code = metadata.get("code") or None
-    plan_id = metadata.get("plan")
     amount = session.get("amount_total")
     currency = session.get("currency")
     if session.get("mode") == "subscription":
@@ -131,7 +147,9 @@ def fulfill_checkout(db, cfg, session, stripe=None):
         expires = access.now() + int(seconds) if seconds else None
         existing = db.execute("SELECT 1 FROM entitlements WHERE source_ref = ?", (session["id"],)).fetchone()
         if not existing:
-            access.grant(db, customer["id"], plan_id or "one_time", expires, session["id"], amount, currency, code)
+            kind = metadata.get("kind") or metadata.get("plan") or "one_time"
+            access.grant(db, customer["id"], kind, expires, session["id"], amount, currency, code,
+                         sites=_sites_from(metadata), offer_id=_offer_id(metadata))
     if code:
         codes.record_use(db, code, customer["id"], f"checkout:{session['id']}")
     return customer["id"]
@@ -150,6 +168,7 @@ def sync_subscription(db, cfg, sub, customer_id=None, amount=None, currency=None
         return access.upsert_subscription(
             db, customer_id, sub["id"], "active", period_end + access.SUBSCRIPTION_GRACE,
             amount, currency, code or metadata.get("code") or None,
+            sites=_sites_from(metadata), offer_id=_offer_id(metadata),
         )
     if status in ENDED_SUB_STATUSES:
         ended = sub.get("ended_at") or access.now()
@@ -198,9 +217,10 @@ def handle_event(db, cfg, event, stripe=None):
 
 
 def grant_free(db, cfg, code_row, customer):
-    """Redeem a ``free`` code (or a 100 % discount on a one-off plan)."""
+    """Redeem a ``free`` code: access to every site the code is linked to."""
     days = code_row["grant_days"]
     expires = access.now() + days * plans.DAY if days else None
     context = f"free:{code_row['code']}:{customer['id']}"
     if codes.record_use(db, code_row["code"], customer["id"], context):
-        access.grant(db, customer["id"], "code", expires, context, 0, cfg["currency"], code_row["code"])
+        access.grant(db, customer["id"], "code", expires, context, 0, cfg["currency"], code_row["code"],
+                     sites=codes.unlocks(db, code_row))

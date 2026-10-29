@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Your account – {{ cfg.paywall_title }}{% endblock %}
+{% block title %}Your account – {{ brand.title }}{% endblock %}
 {% block booth_class %}single{% endblock %}
 {% block content %}
 <section class="window">
@@ -9,15 +9,18 @@
 </section>
 
 <div class="ticket">
-  <div class="stub plain">
-    {% if has_access %}
-      <h2>{% if until %}Valid until {{ until|dt }}{% else %}Valid with no end date{% endif %}</h2>
-      {% if site_url %}<p class="act" style="margin-top:14px"><a class="btn" href="{{ url_for('go') }}">Go to the site</a></p>{% endif %}
-    {% else %}
+  {% for site, until in open_sites %}
+    <div class="stub">
+      <h2>{{ site.title }}</h2>
+      <p class="terms">{% if until %}Valid until {{ until|dt }}{% else %}Valid with no end date{% endif %}</p>
+      <div class="act"><a class="btn" href="{{ url_for('go', site_id=site.id) }}">Open {{ site.title }}</a></div>
+    </div>
+  {% else %}
+    <div class="stub plain">
       <h2>No active access</h2>
-      <p class="act" style="margin-top:14px"><a class="btn" href="{{ url_for('index', stay=1) }}">See the options</a></p>
-    {% endif %}
-  </div>
+      {% if brand.id %}<p class="act" style="margin-top:14px"><a class="btn" href="{{ url_for('site_page', site_id=brand.id, stay=1) }}">See the options</a></p>{% endif %}
+    </div>
+  {% endfor %}
 
   {% if can_manage %}
   <form class="stub plain" method="post" action="{{ url_for('billing_portal') }}">
@@ -46,7 +49,8 @@
     <table class="history">
       {% for e in entitlements %}
         <tr>
-          <td>{{ e.kind|kind }}{% if e.code %} <span class="code-mark">{{ e.code }}</span>{% endif %}</td>
+          <td>{{ e.kind|kind }}{% if e.code %} <span class="code-mark">{{ e.code }}</span>{% endif %}<br>
+            <span class="hint">{% for s in (e.site_list or '').split(',') if s %}{{ site_names.get(s, s) }}{% if not loop.last %}, {% endif %}{% endfor %}</span></td>
           <td>{{ e.starts_at|dt }}</td>
           <td>{% if e.status == 'active' and (not e.expires_at or e.expires_at > now) %}<span class="state ok">{{ 'until ' ~ (e.expires_at|dt) if e.expires_at else 'no end date' }}</span>{% else %}<span class="state off">{{ 'ended' if e.status == 'active' else e.status }}</span>{% endif %}</td>
         </tr>
@@ -58,8 +62,7 @@
 
 <form method="post" action="{{ url_for('logout') }}">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <a href="{{ url_for('index', stay=1) }}">All options</a>
-  &nbsp;&nbsp;
+  {% if brand.id %}<a href="{{ url_for('site_page', site_id=brand.id, stay=1) }}">All options for {{ brand.title }}</a>&nbsp;&nbsp;{% endif %}
   <button type="submit" class="linkish">Sign out</button>
 </form>
 {% endblock %}

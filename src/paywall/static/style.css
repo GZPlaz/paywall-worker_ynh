@@ -225,6 +225,15 @@ fieldset { border: 1.5px solid var(--field); border-radius: 3px; padding: 10px 1
 legend { font-weight: 600; font-size: .92rem; padding: 0 4px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; margin: 2px 16px 2px 0; font-weight: 400; }
 .hidden { display: none !important; }
+.small-link { font-size: .9rem; margin-left: 4px; }
+.site-checks .hint { margin-top: 6px; }
+details > summary { cursor: pointer; }
+details > summary:hover { text-decoration: underline; }
+.code-sites { display: grid; gap: 4px; padding: 8px 0 4px; }
+.code-sites label { display: flex; gap: 6px; align-items: center; font-weight: 400; margin: 0; }
+.code-sites .btn { justify-self: start; margin-top: 4px; }
+textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92rem; }
+input[type="color"] { padding: 4px; height: 46px; }
 
 table.data { width: 100%; border-collapse: collapse; font-size: .95rem; }
 table.data th { text-align: left; font-weight: 600; color: var(--ink-soft); padding: 0 10px 8px 0; border-bottom: 2px solid var(--ink); }

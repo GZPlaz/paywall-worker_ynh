@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block booth_class %}single{% endblock %}
+{% block content %}
+<section class="window">
+  {% include "_notices.html" %}
+  <h1>{% if sites %}Where to?{% else %}Nothing here yet{% endif %}</h1>
+  <p class="lede">{% if sites %}This paywall serves several sites. Pick the one you want to open.{% else %}No site is protected by this paywall yet.{% endif %}</p>
+</section>
+{% if sites %}
+<div class="ticket">
+  {% for s in sites %}
+    <div class="stub plain">
+      <h2><a href="{{ url_for('site_page', site_id=s.id) }}">{{ s.title }}</a></h2>
+      {% if s.description %}<p class="terms">{{ s.description|truncate(140) }}</p>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

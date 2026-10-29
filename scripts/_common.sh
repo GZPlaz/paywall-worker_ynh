@@ -93,10 +93,9 @@ _install_cli() {
 # Push the Worker to Cloudflare if the admin enabled automatic deployment
 _auto_deploy_worker() {
     if [ "$(ynh_app_setting_get --key=cf_auto_deploy)" == "1" ] \
-        && [ -n "$(ynh_app_setting_get --key=cf_api_token)" ] \
-        && [ -n "$(ynh_app_setting_get --key=protected_routes)" ]; then
+        && [ -n "$(ynh_app_setting_get --key=cf_api_token)" ]; then
         ynh_script_progression "Updating the Cloudflare Worker..."
-        _paywall_cli deploy-worker \
+        _paywall_cli deploy-worker --if-configured \
             || ynh_print_warn "The Cloudflare Worker could not be updated. Check the settings in the config panel and use the 'Deploy' button."
     fi
 }

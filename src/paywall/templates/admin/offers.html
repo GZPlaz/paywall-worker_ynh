@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+{% block title %}Offers{% endblock %}
+{% block content %}
+<section class="sheet">
+  <div class="sheet-head">
+    <h2>Offers</h2>
+    {% if has_sites %}<a class="btn small" href="{{ url_for('admin.new_offer') }}">Create an offer</a>{% endif %}
+  </div>
+  <p class="hint" style="margin-bottom:14px">An offer is sold on every site it is linked to, and buying it opens all of those sites. Link one offer to several sites to sell a bundle.</p>
+  <div class="table-wrap"><table class="data">
+    <tr><th>Offer</th><th>Price</th><th>Sites</th><th class="num">Holders</th><th>State</th><th></th></tr>
+    {% for o in offers %}
+      <tr>
+        <td><a href="{{ url_for('admin.edit_offer', offer_id=o.id) }}"><b>{{ o.name }}</b></a><br><span class="hint">{{ describe(o) }}</span></td>
+        <td>{{ price(o) }}</td>
+        <td>{{ site_names(o.site_ids) if o.site_ids else 'none' }}</td>
+        <td class="num">{{ holders[o.id] }}</td>
+        <td>{% if o.active %}<span class="state ok">on sale</span>{% else %}<span class="state off">off</span>{% endif %}</td>
+        <td class="acts"><a class="btn quiet small" href="{{ url_for('admin.edit_offer', offer_id=o.id) }}">Edit</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="hint">{% if has_sites %}No offers yet.{% else %}Add a site first, then create offers for it.{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+{% endblock %}

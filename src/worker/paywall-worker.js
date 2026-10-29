@@ -1,9 +1,10 @@
 /**
  * Paywall Worker
  *
- * Runs on Cloudflare in front of the protected site(s). Visitors need a valid
- * access cookie; everyone else is sent to the paywall hosted on YunoHost.
- * Tokens are HMAC-SHA256 signed with PAYWALL_SECRET (same scheme as
+ * Runs on Cloudflare in front of the protected sites. Each request is matched
+ * to one site (most specific route wins); visitors need a valid access cookie
+ * for that site, everyone else is sent to that site's paywall page on
+ * YunoHost. Tokens are HMAC-SHA256 signed with PAYWALL_SECRET (same scheme as
  * src/paywall/tokens.py), so no call to the paywall server is needed to
  * check access.
  *
@@ -11,14 +12,14 @@
  *   PAYWALL_URL      public URL of the paywall, e.g. https://pay.example.com
  *   PAYWALL_SECRET   secret shared with the paywall (secret binding)
  *   ORIGIN_SECRET    optional, sent to the origin as X-Paywall-Origin-Key
- *   COOKIE_NAME      access cookie name (default "__Host-paywall")
- *   CALLBACK_PREFIX  reserved path prefix on the site (default "/__paywall")
- *   BYPASS_PATHS     newline separated paths that stay public ("*" suffix = prefix match)
+ *   CALLBACK_PREFIX  reserved path segment on the sites (default "/__paywall")
+ *   SITES            JSON list of {id, routes, bypass, cookie}
  */
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const keyCache = new Map();
+let sitesCache = { raw: null, parsed: [] };
 
 function b64urlToBytes(value) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
@@ -69,17 +70,58 @@ export async function verifyToken(token, secret, type, now = Date.now() / 1000) 
   }
 }
 
+function parseRoute(pattern) {
+  const slash = pattern.indexOf("/");
+  const host = slash === -1 ? pattern : pattern.slice(0, slash);
+  const path = slash === -1 ? "/*" : pattern.slice(slash);
+  return { host, path };
+}
+
+function hostMatches(host, pattern) {
+  if (pattern.startsWith("*.")) return host === pattern.slice(2) || host.endsWith(pattern.slice(1));
+  return host === pattern;
+}
+
+function pathMatches(path, pattern) {
+  return pattern.endsWith("*") ? path.startsWith(pattern.slice(0, -1)) : path === pattern;
+}
+
+function siteList(env) {
+  const raw = env.SITES || "[]";
+  if (sitesCache.raw !== raw) {
+    let parsed = [];
+    try {
+      parsed = JSON.parse(raw).map((site) => ({ ...site, routes: (site.routes || []).map(parseRoute) }));
+    } catch {
+      parsed = [];
+    }
+    sitesCache = { raw, parsed };
+  }
+  return sitesCache.parsed;
+}
+
+/** The site covering this URL and the base path of the matching route. */
+export function matchSite(url, sites) {
+  let best = null;
+  for (const site of sites) {
+    for (const route of site.routes) {
+      if (!hostMatches(url.hostname, route.host) || !pathMatches(url.pathname, route.path)) continue;
+      const score = route.path.length * 2 + (route.host.startsWith("*.") ? 0 : 1);
+      if (!best || score > best.score) {
+        best = { site, score, base: route.path.replace(/\*$/, "").replace(/\/$/, "") };
+      }
+    }
+  }
+  return best;
+}
+
 function settings(env) {
   return {
     paywallUrl: (env.PAYWALL_URL || "").replace(/\/+$/, ""),
     secret: env.PAYWALL_SECRET || "",
     originSecret: env.ORIGIN_SECRET || "",
-    cookieName: env.COOKIE_NAME || "__Host-paywall",
     prefix: env.CALLBACK_PREFIX || "/__paywall",
-    bypass: (env.BYPASS_PATHS || "")
-      .split(/[\n,]/)
-      .map((p) => p.trim())
-      .filter(Boolean),
+    sites: siteList(env),
   };
 }
 
@@ -91,16 +133,17 @@ function readCookie(header, name) {
   return null;
 }
 
-function withoutCookie(header, name) {
+function withoutPaywallCookies(header, sites) {
+  const names = new Set(sites.map((site) => site.cookie));
   return (header || "")
     .split(";")
-    .filter((part) => part.split("=")[0].trim() !== name)
+    .filter((part) => !names.has(part.split("=")[0].trim()))
     .join(";")
     .trim();
 }
 
 function isBypassed(path, patterns) {
-  return patterns.some((pattern) =>
+  return (patterns || []).some((pattern) =>
     pattern.endsWith("*") ? path.startsWith(pattern.slice(0, -1)) : path === pattern,
   );
 }
@@ -112,39 +155,50 @@ function redirect(location, extraHeaders = {}) {
   });
 }
 
-function toPaywall(url, cfg) {
-  return `${cfg.paywallUrl}/?return=${encodeURIComponent(url.href)}`;
+function paywallPage(cfg, site, url) {
+  const base = `${cfg.paywallUrl}/s/${encodeURIComponent(site.id)}`;
+  return url ? `${base}?return=${encodeURIComponent(url.href)}` : base;
 }
 
 function forward(request, cfg, user) {
   const headers = new Headers(request.headers);
-  const cookies = withoutCookie(headers.get("Cookie"), cfg.cookieName);
+  const cookies = withoutPaywallCookies(headers.get("Cookie"), cfg.sites);
   if (cookies) headers.set("Cookie", cookies);
   else headers.delete("Cookie");
   headers.delete("X-Paywall-User");
+  headers.delete("X-Paywall-Site");
   headers.delete("X-Paywall-Origin-Key");
-  if (user) headers.set("X-Paywall-User", user);
+  if (user) {
+    headers.set("X-Paywall-User", user.sub);
+    headers.set("X-Paywall-Site", user.site);
+  }
   if (cfg.originSecret) headers.set("X-Paywall-Origin-Key", cfg.originSecret);
   return fetch(new Request(request, { headers }));
 }
 
-async function handleAuth(url, cfg) {
+async function handleAuth(url, cfg, match) {
   const handoff = await verifyToken(url.searchParams.get("t"), cfg.secret, "handoff");
-  if (!handoff || typeof handoff.aexp !== "number") return redirect(`${cfg.paywallUrl}/`);
-  let target = "/";
+  if (!handoff || handoff.site !== match.site.id || typeof handoff.aexp !== "number") {
+    return redirect(paywallPage(cfg, match.site));
+  }
+  let target = `${match.base}/`;
   try {
     const wanted = new URL(handoff.r);
-    if (wanted.origin === url.origin && !wanted.pathname.startsWith(cfg.prefix + "/")) {
+    const sameSite = matchSite(wanted, cfg.sites);
+    if (wanted.origin === url.origin && sameSite && sameSite.site.id === match.site.id && !wanted.pathname.includes(`${cfg.prefix}/`)) {
       target = wanted.pathname + wanted.search + wanted.hash;
     }
   } catch {
-    // keep "/"
+    // keep the site's base path
   }
   const now = Math.floor(Date.now() / 1000);
   const maxAge = Math.floor(handoff.aexp - now);
-  if (maxAge <= 0) return redirect(`${cfg.paywallUrl}/`);
-  const access = await signToken({ v: 1, typ: "access", sub: handoff.sub, exp: handoff.aexp, iat: now }, cfg.secret);
-  const cookie = `${cfg.cookieName}=${access}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  if (maxAge <= 0) return redirect(paywallPage(cfg, match.site));
+  const access = await signToken(
+    { v: 1, typ: "access", sub: handoff.sub, site: match.site.id, exp: handoff.aexp, iat: now },
+    cfg.secret,
+  );
+  const cookie = `${match.site.cookie}=${access}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
   return redirect(target, { "Set-Cookie": cookie });
 }
 
@@ -156,27 +210,32 @@ export default {
     if (!cfg.paywallUrl || !cfg.secret) {
       return new Response("Paywall is not configured", { status: 503 });
     }
-    if (url.pathname === `${cfg.prefix}/auth`) {
-      return handleAuth(url, cfg);
+    const match = matchSite(url, cfg.sites);
+    if (!match) {
+      // A route points here but no active site claims it: fail closed.
+      return redirect(`${cfg.paywallUrl}/`);
     }
-    if (url.pathname === `${cfg.prefix}/logout`) {
-      return redirect(`${cfg.paywallUrl}/`, {
-        "Set-Cookie": `${cfg.cookieName}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    if (url.pathname === `${match.base}${cfg.prefix}/auth`) {
+      return handleAuth(url, cfg, match);
+    }
+    if (url.pathname === `${match.base}${cfg.prefix}/logout`) {
+      return redirect(paywallPage(cfg, match.site), {
+        "Set-Cookie": `${match.site.cookie}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
       });
     }
-    if (isBypassed(url.pathname, cfg.bypass)) {
+    if (isBypassed(url.pathname, match.site.bypass)) {
       return forward(request, cfg, null);
     }
 
-    const access = await verifyToken(readCookie(request.headers.get("Cookie"), cfg.cookieName), cfg.secret, "access");
-    if (access) {
-      return forward(request, cfg, access.sub);
+    const access = await verifyToken(readCookie(request.headers.get("Cookie"), match.site.cookie), cfg.secret, "access");
+    if (access && access.site === match.site.id) {
+      return forward(request, cfg, access);
     }
 
     if (request.method === "GET" || request.method === "HEAD") {
-      return redirect(toPaywall(url, cfg));
+      return redirect(paywallPage(cfg, match.site, url));
     }
-    return new Response(JSON.stringify({ error: "payment_required", paywall: toPaywall(url, cfg) }), {
+    return new Response(JSON.stringify({ error: "payment_required", paywall: paywallPage(cfg, match.site, url) }), {
       status: 402,
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });

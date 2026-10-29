@@ -1,13 +1,14 @@
 {% extends "admin/base.html" %}
 {% from "admin/_state.html" import entitlement_state, amount with context %}
+{% from "admin/_fields.html" import site_checks %}
 {% block title %}{{ customer.email or customer.id }}{% endblock %}
 {% block content %}
 <div class="columns">
   <section class="sheet">
     <h2>{{ customer.email or "Customer without email" }}</h2>
     <dl class="facts">
-      <dt>Access</dt>
-      <dd>{% if has_access %}<span class="state ok">{% if until %}until {{ until|dt }}{% else %}no end date{% endif %}</span>{% else %}<span class="state bad">none</span>{% endif %}</dd>
+      <dt>Can open</dt>
+      <dd>{% for s in sites if s.id in open_sites %}{{ s.name }} <span class="hint">({{ 'until ' ~ (open_sites[s.id]|dt) if open_sites[s.id] else 'no end date' }})</span>{% if not loop.last %}<br>{% endif %}{% else %}<span class="state bad">nothing</span>{% endfor %}</dd>
       <dt>Customer id</dt><dd class="mono">{{ customer.id }}</dd>
       <dt>Since</dt><dd>{{ customer.created_at|dt }}</dd>
       {% if customer.stripe_customer_id %}<dt>Stripe</dt><dd class="mono">{{ customer.stripe_customer_id }}</dd>{% endif %}
@@ -20,6 +21,7 @@
     <div class="fields">
       <div><label for="days">Days (empty: no end date)</label><input id="days" name="days" type="number" min="1"></div>
       <div><label for="note">Note</label><input id="note" name="note"></div>
+      {{ site_checks(sites, legend="Gives access to") }}
       <div><button type="submit" class="btn">Grant access</button></div>
     </div>
   </form>
@@ -27,10 +29,11 @@
 <section class="sheet">
   <h2>Access history</h2>
   <div class="table-wrap"><table class="data">
-    <tr><th>What</th><th>Reference</th><th class="num">Paid</th><th>From</th><th>Until</th><th>State</th><th></th></tr>
+    <tr><th>What</th><th>Sites</th><th>Reference</th><th class="num">Paid</th><th>From</th><th>Until</th><th>State</th><th></th></tr>
     {% for e in entitlements %}
       <tr>
         <td>{{ e.kind|kind }}{% if e.code %} <span class="code-mark">{{ e.code }}</span>{% endif %}{% if e.note %}<br><span class="hint">{{ e.note }}</span>{% endif %}</td>
+        <td>{{ site_names((e.site_list or '').split(',')|select|list) if e.site_list else 'none' }}</td>
         <td class="mono">{{ e.source_ref or '' }}</td>
         <td class="num">{{ amount(e) }}</td>
         <td>{{ e.starts_at|dt }}</td>
@@ -46,7 +49,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="hint">Nothing yet.</td></tr>
+      <tr><td colspan="8" class="hint">Nothing yet.</td></tr>
     {% endfor %}
   </table></div>
   <p class="hint" style="margin-top:12px">A revocation reaches the protected site the next time the visitor's cookie is re-checked, within {{ cfg.access_recheck_hours }} hours.</p>

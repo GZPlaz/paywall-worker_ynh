@@ -67,27 +67,43 @@ def merge(db, source_id, target_id):
     return True
 
 
+def link_sites(db, entitlement_id, site_ids):
+    db.executemany(
+        "INSERT OR IGNORE INTO entitlement_sites (entitlement_id, site_id) "
+        "SELECT ?, id FROM sites WHERE id = ?",
+        [(entitlement_id, s) for s in site_ids],
+    )
+
+
 def grant(db, customer_id, kind, expires_at=None, source_ref=None, amount=None,
-          currency=None, code=None, note=None, starts_at=None):
-    """Create an entitlement. Idempotent when ``source_ref`` is given."""
+          currency=None, code=None, note=None, starts_at=None, sites=(), offer_id=None):
+    """Create an entitlement giving access to ``sites``. Idempotent when
+    ``source_ref`` is given."""
     ts = now()
     db.execute(
         """INSERT OR IGNORE INTO entitlements
-           (customer_id, kind, source_ref, status, starts_at, expires_at, amount, currency, code, note, created_at, updated_at)
-           VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (customer_id, kind, source_ref, starts_at or ts, expires_at, amount, currency, code, note, ts, ts),
+           (customer_id, kind, source_ref, status, starts_at, expires_at, amount, currency, code, note,
+            offer_id, created_at, updated_at)
+           VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (customer_id, kind, source_ref, starts_at or ts, expires_at, amount, currency, code, note,
+         offer_id, ts, ts),
     )
     if source_ref:
-        return db.execute("SELECT * FROM entitlements WHERE source_ref = ?", (source_ref,)).fetchone()
-    return db.execute("SELECT * FROM entitlements WHERE id = last_insert_rowid()").fetchone()
+        row = db.execute("SELECT * FROM entitlements WHERE source_ref = ?", (source_ref,)).fetchone()
+    else:
+        row = db.execute("SELECT * FROM entitlements WHERE id = last_insert_rowid()").fetchone()
+    link_sites(db, row["id"], sites)
+    return row
 
 
-def upsert_subscription(db, customer_id, subscription_id, status, expires_at, amount=None, currency=None, code=None):
+def upsert_subscription(db, customer_id, subscription_id, status, expires_at, amount=None, currency=None,
+                        code=None, sites=(), offer_id=None):
     existing = db.execute("SELECT * FROM entitlements WHERE source_ref = ?", (subscription_id,)).fetchone()
     if existing is None:
         if status != "active" or customer_id is None:
             return None
-        return grant(db, customer_id, "subscription", expires_at, subscription_id, amount, currency, code)
+        return grant(db, customer_id, "subscription", expires_at, subscription_id, amount, currency, code,
+                     sites=sites, offer_id=offer_id)
     if existing["status"] == "revoked":
         return existing
     db.execute(
@@ -98,24 +114,51 @@ def upsert_subscription(db, customer_id, subscription_id, status, expires_at, am
 
 
 def entitlements_for(db, customer_id):
-    return db.execute(
-        "SELECT * FROM entitlements WHERE customer_id = ? ORDER BY created_at DESC", (customer_id,)
+    rows = db.execute(
+        """SELECT e.*, (SELECT GROUP_CONCAT(site_id, ',') FROM entitlement_sites es
+                        WHERE es.entitlement_id = e.id) AS site_list
+           FROM entitlements e WHERE e.customer_id = ? ORDER BY e.created_at DESC""",
+        (customer_id,),
     ).fetchall()
+    return rows
 
 
-def access_until(db, customer_id, at=None):
-    """Return (has_access, until) where ``until`` is None for unlimited access."""
+def access_until(db, customer_id, site_id, at=None):
+    """Return (has_access, until) for ``site_id``; ``until`` is None for
+    access with no end date."""
     at = at or now()
     rows = db.execute(
-        "SELECT expires_at FROM entitlements WHERE customer_id = ? AND status = 'active' "
-        "AND starts_at <= ? AND (expires_at IS NULL OR expires_at > ?)",
-        (customer_id, at, at),
+        """SELECT e.expires_at FROM entitlements e
+           JOIN entitlement_sites es ON es.entitlement_id = e.id AND es.site_id = ?
+           WHERE e.customer_id = ? AND e.status = 'active' AND e.starts_at <= ?
+             AND (e.expires_at IS NULL OR e.expires_at > ?)""",
+        (site_id, customer_id, at, at),
     ).fetchall()
     if not rows:
         return False, None
     if any(row["expires_at"] is None for row in rows):
         return True, None
     return True, max(row["expires_at"] for row in rows)
+
+
+def access_by_site(db, customer_id):
+    """{site_id: until-or-None} for every site the customer can open now."""
+    ts = now()
+    result = {}
+    rows = db.execute(
+        """SELECT es.site_id, e.expires_at FROM entitlements e
+           JOIN entitlement_sites es ON es.entitlement_id = e.id
+           WHERE e.customer_id = ? AND e.status = 'active' AND e.starts_at <= ?
+             AND (e.expires_at IS NULL OR e.expires_at > ?)""",
+        (customer_id, ts, ts),
+    ).fetchall()
+    for row in rows:
+        site, exp = row["site_id"], row["expires_at"]
+        if site in result and (result[site] is None or exp is None):
+            result[site] = None
+        else:
+            result[site] = exp if site not in result else max(result[site], exp)
+    return result
 
 
 def lapsed_subscriptions(db, customer_id):
@@ -141,11 +184,11 @@ def stripe_customer_for(db, customer_id):
 
 def stats(db):
     ts = now()
+    active = "e.status = 'active' AND (e.expires_at IS NULL OR e.expires_at > :ts)"
     return {
         "customers": db.execute("SELECT COUNT(*) FROM customers").fetchone()[0],
         "active": db.execute(
-            "SELECT COUNT(DISTINCT customer_id) FROM entitlements WHERE status = 'active' "
-            "AND (expires_at IS NULL OR expires_at > ?)", (ts,)
+            f"SELECT COUNT(DISTINCT customer_id) FROM entitlements e WHERE {active}", {"ts": ts}
         ).fetchone()[0],
         "subscriptions": db.execute(
             "SELECT COUNT(*) FROM entitlements WHERE kind = 'subscription' AND status = 'active' "
@@ -155,6 +198,15 @@ def stats(db):
             "SELECT currency, SUM(amount) AS total FROM entitlements WHERE amount IS NOT NULL "
             "AND kind != 'subscription' GROUP BY currency"
         ).fetchall(),
+        "per_site": {
+            row["site_id"]: row["people"]
+            for row in db.execute(
+                f"""SELECT es.site_id, COUNT(DISTINCT e.customer_id) AS people FROM entitlements e
+                    JOIN entitlement_sites es ON es.entitlement_id = e.id WHERE {active}
+                    GROUP BY es.site_id""",
+                {"ts": ts},
+            )
+        },
     }
 
 

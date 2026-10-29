@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Sign in – {{ cfg.paywall_title }}{% endblock %}
+{% block title %}Sign in – {{ brand.title }}{% endblock %}
 {% block booth_class %}single{% endblock %}
 {% block content %}
 <section class="window">
@@ -23,5 +23,5 @@
     {% endif %}
   </div>
 </div>
-<p><a href="{{ url_for('index') }}">Back to {{ cfg.paywall_title }}</a></p>
+<p><a href="{{ url_for('site_page', site_id=brand.id) if brand.id else url_for('index') }}">Back to {{ brand.title }}</a></p>
 {% endblock %}

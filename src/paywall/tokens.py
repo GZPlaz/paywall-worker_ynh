@@ -10,6 +10,8 @@ Token types (``typ``):
     payment/login and passed in the URL to ``<site><prefix>/auth``.
   * ``access``  - minted by the Worker itself and stored as a cookie on the
     protected site.
+
+Both carry ``site``: a token for one site is never accepted by another.
 """
 
 import base64
@@ -61,13 +63,14 @@ def verify(token: str, secret: str, typ: str, now=None):
     return payload
 
 
-def handoff(secret, customer_id, access_until, return_url, now=None):
+def handoff(secret, customer_id, site_id, access_until, return_url, now=None):
     now = int(now if now is not None else time.time())
     return sign(
         {
             "v": VERSION,
             "typ": "handoff",
             "sub": customer_id,
+            "site": site_id,
             "aexp": int(access_until),
             "exp": now + HANDOFF_TTL,
             "r": return_url,

@@ -5,6 +5,9 @@ Kinds:
   * ``fixed``   - fixed amount off (smallest currency unit)
   * ``free``    - skips payment entirely and grants access for ``grant_days``
                   days (or forever)
+
+A code is linked to some sites (``code_sites``); a code with no linked site
+works on every site. A free code unlocks all the sites it is linked to.
 """
 
 import re
@@ -31,7 +34,7 @@ def generate(prefix="", length=10):
 
 
 def create(db, code=None, kind="percent", value=0, plans="", max_uses=None, expires_at=None,
-           grant_days=None, duration="once", duration_months=None, note=None):
+           grant_days=None, duration="once", duration_months=None, note=None, sites=()):
     code = normalize(code) or generate()
     if not _CODE_RE.match(code):
         raise CodeError("Codes must be 3-64 characters: letters, digits, '-' or '_'.")
@@ -58,7 +61,37 @@ def create(db, code=None, kind="percent", value=0, plans="", max_uses=None, expi
         (code, kind, value, plan_list, max_uses or None, expires_at or None, grant_days or None,
          duration, duration_months or None, note, int(time.time())),
     )
+    set_sites(db, code, sites)
     return get(db, code)
+
+
+def set_sites(db, code, site_ids):
+    code = normalize(code)
+    db.execute("DELETE FROM code_sites WHERE code = ?", (code,))
+    db.executemany(
+        "INSERT OR IGNORE INTO code_sites (code, site_id) SELECT ?, id FROM sites WHERE id = ?",
+        [(code, s) for s in site_ids],
+    )
+
+
+def site_ids(db, code):
+    return [r[0] for r in db.execute(
+        "SELECT site_id FROM code_sites WHERE code = ? ORDER BY site_id", (normalize(code),))]
+
+
+def sites_map(db):
+    result = {}
+    for row in db.execute("SELECT code, site_id FROM code_sites ORDER BY site_id"):
+        result.setdefault(row["code"].upper(), []).append(row["site_id"])
+    return result
+
+
+def unlocks(db, row):
+    """Sites a free code gives access to."""
+    linked = site_ids(db, row["code"])
+    if linked:
+        return linked
+    return [r[0] for r in db.execute("SELECT id FROM sites WHERE active = 1")]
 
 
 def get(db, code):
@@ -81,8 +114,9 @@ def plan_ids(row):
     return [p for p in (row["plans"] or "").split(",") if p]
 
 
-def check(db, code, plan_id=None, now=None):
-    """Return the code row if usable (optionally for ``plan_id``), else raise CodeError."""
+def check(db, code, plan_id=None, site_id=None, now=None):
+    """Return the code row if usable (optionally for ``plan_id`` on
+    ``site_id``), else raise CodeError."""
     now = now or int(time.time())
     row = get(db, code)
     if row is None or not row["active"]:
@@ -91,7 +125,11 @@ def check(db, code, plan_id=None, now=None):
         raise CodeError("This code has expired.")
     if row["max_uses"] is not None and row["uses"] >= row["max_uses"]:
         raise CodeError("This code has already been used the maximum number of times.")
-    if plan_id and plan_ids(row) and plan_id not in plan_ids(row):
+    if site_id:
+        linked = site_ids(db, row["code"])
+        if linked and site_id not in linked:
+            raise CodeError("This code is not valid on this site.")
+    if plan_id and plan_ids(row) and str(plan_id) not in plan_ids(row):
         raise CodeError("This code does not apply to that option.")
     return row
 

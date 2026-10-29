@@ -13,6 +13,8 @@ import urllib.error
 import urllib.request
 import uuid
 
+from . import sites
+
 API_BASE = "https://api.cloudflare.com/client/v4"
 COMPATIBILITY_DATE = "2024-09-23"
 WORKER_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "worker", "paywall-worker.js")
@@ -105,25 +107,28 @@ def worker_source():
         return fh.read()
 
 
-def worker_vars(cfg):
+def worker_vars(cfg, conn):
     """Plain-text settings for the Worker (secrets are handled separately)."""
     return {
         "PAYWALL_URL": cfg.public_url,
-        "COOKIE_NAME": cfg["cookie_name"],
         "CALLBACK_PREFIX": cfg["callback_prefix"],
-        "BYPASS_PATHS": cfg["bypass_paths"],
+        "SITES": json.dumps(sites.worker_config(conn, cfg["cookie_name"]), separators=(",", ":")),
     }
 
 
-def bindings(cfg):
-    result = [{"type": "plain_text", "name": k, "text": v} for k, v in worker_vars(cfg).items()]
+def all_routes(conn):
+    return [(pattern, host) for site in sites.list_all(conn, active_only=True) for pattern, host, _ in site.route_list]
+
+
+def bindings(cfg, conn):
+    result = [{"type": "plain_text", "name": k, "text": v} for k, v in worker_vars(cfg, conn).items()]
     result.append({"type": "secret_text", "name": "PAYWALL_SECRET", "text": cfg["signing_secret"]})
     if cfg["origin_secret"]:
         result.append({"type": "secret_text", "name": "ORIGIN_SECRET", "text": cfg["origin_secret"]})
     return result
 
 
-def wrangler_toml(cfg):
+def wrangler_toml(cfg, conn):
     """Configuration for people who prefer deploying with ``wrangler``."""
     lines = [
         f'name = "{cfg["worker_name"]}"',
@@ -132,10 +137,10 @@ def wrangler_toml(cfg):
         "",
         "routes = [",
     ]
-    for pattern, _, _ in cfg.routes:
+    for pattern, _ in all_routes(conn):
         lines.append(f'  {{ pattern = "{pattern}", zone_name = "<your zone, e.g. example.com>" }},')
     lines += ["]", "", "[vars]"]
-    for key, value in worker_vars(cfg).items():
+    for key, value in worker_vars(cfg, conn).items():
         lines.append(f"{key} = {json.dumps(value)}")
     lines += [
         "",
@@ -147,24 +152,27 @@ def wrangler_toml(cfg):
     return "\n".join(lines)
 
 
-def _zones_for_routes(cf, cfg):
+def _zones_for_routes(cf, cfg, conn):
     zones = {}
-    for pattern, host, _ in cfg.routes:
+    for pattern, host in all_routes(conn):
         zone_id = cfg["cf_zone_id"] or cf.zone_id_for(host)
         zones.setdefault(zone_id, []).append(pattern)
     return zones
 
 
-def deploy(cfg, log=print):
+def deploy(cfg, conn, log=print):
+    """Upload the Worker with the current sites and make Cloudflare routes
+    match them exactly (stale routes of this Worker are removed)."""
     if not cfg.cloudflare_ready:
         raise CloudflareError("Set the Cloudflare API token and account ID first")
-    if not cfg.routes:
-        raise CloudflareError("No protected routes configured")
+    routes = all_routes(conn)
+    if not routes:
+        raise CloudflareError("No active site has routes yet")
     cf = Cloudflare(cfg["cf_api_token"])
     name = cfg["worker_name"]
     log(f"Uploading Worker '{name}'...")
-    cf.upload_worker(cfg["cf_account_id"], name, worker_source(), bindings(cfg))
-    wanted_zones = _zones_for_routes(cf, cfg)
+    cf.upload_worker(cfg["cf_account_id"], name, worker_source(), bindings(cfg, conn))
+    wanted_zones = _zones_for_routes(cf, cfg, conn)
     for zone_id, patterns in wanted_zones.items():
         existing = cf.list_routes(zone_id)
         by_pattern = {r["pattern"]: r for r in existing}
@@ -182,22 +190,23 @@ def deploy(cfg, log=print):
             if route.get("script") == name and route["pattern"] not in patterns:
                 log(f"Removing stale route {route['pattern']}")
                 cf.delete_route(zone_id, route["id"])
-    write_status(cfg, f"Deployed '{name}' on {', '.join(p for p, _, _ in cfg.routes)}")
+    write_status(cfg, f"Deployed '{name}' on {', '.join(p for p, _ in routes)}")
     log("Done.")
 
 
-def undeploy(cfg, log=print):
+def undeploy(cfg, conn, log=print):
     if not cfg.cloudflare_ready:
         return
     cf = Cloudflare(cfg["cf_api_token"])
     name = cfg["worker_name"]
     zone_ids = {cfg["cf_zone_id"]} if cfg["cf_zone_id"] else set()
-    for _, host, _ in cfg.routes:
-        if not cfg["cf_zone_id"]:
-            try:
-                zone_ids.add(cf.zone_id_for(host))
-            except CloudflareError as exc:
-                log(str(exc))
+    if not cfg["cf_zone_id"]:
+        for site in sites.list_all(conn):
+            for _, host, _ in site.route_list:
+                try:
+                    zone_ids.add(cf.zone_id_for(host))
+                except CloudflareError as exc:
+                    log(str(exc))
     for zone_id in zone_ids:
         for route in cf.list_routes(zone_id):
             if route.get("script") == name:

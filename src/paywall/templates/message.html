@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ title }} – {{ cfg.paywall_title }}{% endblock %}
+{% block title %}{{ title }} – {{ brand.title }}{% endblock %}
 {% block booth_class %}single{% endblock %}
 {% block content %}
 <section class="window">
@@ -8,7 +8,7 @@
   <p class="lede">{{ message }}</p>
   <div class="aside">
     {% if link %}<p><a class="btn" href="{{ link }}">{{ link_label }}</a></p>{% endif %}
-    <p><a href="{{ url_for('index') }}">Back to {{ cfg.paywall_title }}</a></p>
+    <p><a href="{{ url_for('site_page', site_id=brand.id) if brand.id else url_for('index') }}">Back to {{ brand.title }}</a></p>
   </div>
 </section>
 {% endblock %}

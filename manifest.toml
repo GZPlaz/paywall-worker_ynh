@@ -7,7 +7,7 @@ name = "Paywall Worker"
 description.en = "Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscriptions, passes and access codes"
 description.fr = "Placez un paywall devant n'importe quel site derrière Cloudflare : paiement unique, abonnements, pass et codes d'accès"
 
-version = "1.0.0~ynh1"
+version = "1.1.0~ynh1"
 
 maintainers = []
 
@@ -40,12 +40,6 @@ ram.runtime = "80M"
     help.en = "Who can open the paywall admin pages (codes, customers, Cloudflare)"
     type = "group"
     default = "admins"
-
-    [install.paywall_title]
-    ask.en = "Title shown on the paywall page"
-    ask.fr = "Titre affiché sur la page du paywall"
-    type = "string"
-    default = "Members only"
 
     [install.currency]
     ask.en = "Currency"

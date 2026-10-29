@@ -14,20 +14,11 @@
     <h2>Setup</h2>
     <ul class="plain">
       {% for label, ok, where in checklist %}
-        <li>{% if ok %}<span class="state ok">Done</span>{% else %}<span class="state bad">Missing</span>{% endif %} {{ label }}{% if not ok %}<br><span class="hint">{{ where }}</span>{% endif %}</li>
+        <li>{% if ok %}<span class="state ok">Done</span>{% else %}<span class="state bad">Missing</span>{% endif %}
+          {% if where and not ok %}<a href="{{ where }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</li>
       {% endfor %}
     </ul>
-    <p class="hint" style="margin-top:12px">Settings are in the YunoHost web admin, under Applications, this app, Configuration.</p>
-  </section>
-  <section class="sheet">
-    <h2>On sale</h2>
-    <ul class="plain">
-      {% for plan, price, desc in plans %}
-        <li><b>{{ plan.name }}</b>, {{ price }}<br><span class="hint">{{ desc }}</span></li>
-      {% else %}
-        <li class="hint">Nothing. Visitors can only get in with a free access code.</li>
-      {% endfor %}
-    </ul>
+    <p class="hint" style="margin-top:12px">Payment, email and Cloudflare settings are in the YunoHost web admin, under Applications, this app, Configuration.</p>
   </section>
   <section class="sheet">
     <h2>Addresses</h2>
@@ -38,20 +29,42 @@
 </div>
 
 <section class="sheet">
+  <div class="sheet-head">
+    <h2>Sites</h2>
+    <a class="btn quiet small" href="{{ url_for('admin.new_site') }}">Add a site</a>
+  </div>
+  <div class="table-wrap"><table class="data">
+    <tr><th>Site</th><th>Routes</th><th class="num">Offers on sale</th><th class="num">People with access</th><th>State</th></tr>
+    {% for s, offer_count, people in site_rows %}
+      <tr>
+        <td><a href="{{ url_for('admin.edit_site', site_id=s.id) }}">{{ s.name }}</a></td>
+        <td class="mono">{% for pattern, _, _ in s.route_list %}{{ pattern }}{% if not loop.last %}, {% endif %}{% else %}<span class="hint">none</span>{% endfor %}</td>
+        <td class="num">{{ offer_count }}</td>
+        <td class="num">{{ people }}</td>
+        <td>{% if s.active %}<span class="state ok">on</span>{% else %}<span class="state off">off</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="hint">No sites yet. <a href="{{ url_for('admin.new_site') }}">Add your first site</a>.</td></tr>
+    {% endfor %}
+  </table></div>
+</section>
+
+<section class="sheet">
   <h2>Latest activity</h2>
   <div class="table-wrap"><table class="data">
-    <tr><th>When</th><th>Customer</th><th>What</th><th class="num">Paid</th><th>Until</th><th>State</th></tr>
+    <tr><th>When</th><th>Customer</th><th>What</th><th>Sites</th><th class="num">Paid</th><th>Until</th><th>State</th></tr>
     {% for e in recent %}
       <tr>
         <td>{{ e.created_at|dt }}</td>
         <td><a href="{{ url_for('admin.customer_page', customer_id=e.customer_id) }}">{{ e.email or e.customer_id }}</a></td>
         <td>{{ e.kind|kind }}{% if e.code %} <span class="code-mark">{{ e.code }}</span>{% endif %}</td>
+        <td>{{ site_names((e.site_list or '').split(',')|select|list) if e.site_list else 'none' }}</td>
         <td class="num">{{ amount(e) }}</td>
         <td>{{ e.expires_at|dt if e.expires_at else 'no end date' }}</td>
         <td>{{ entitlement_state(e, now) }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="hint">No sales or grants yet.</td></tr>
+      <tr><td colspan="7" class="hint">No sales or grants yet.</td></tr>
     {% endfor %}
   </table></div>
 </section>

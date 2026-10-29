@@ -4,15 +4,17 @@
 
 Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscriptions, time passes, pay-what-you-want, discount codes and free access codes.
 
-**Shipped version:** 1.0.0~ynh1
+**Shipped version:** 1.1.0~ynh1
 
 ## Overview
 
+One paywall protects any number of **sites**. Each site has its own paywall page, routes, public paths, button color and re-check interval, and access is tracked per site. Offers, codes and manual grants can each be linked to **several sites at once**: an offer linked to two sites is a bundle that opens both.
+
 - A **Cloudflare Worker** sits in front of the protected site(s). It checks a signed access cookie at the edge and redirects everyone else to the paywall.
 - The **paywall** runs on your YunoHost. It lists your offers, takes payments with **Stripe Checkout** and redirects paying visitors back to the page they wanted.
-- Everything is configured from the YunoHost **config panel**. Codes, customers and Worker deployment are managed from the app's **/admin** page (protected by the YunoHost SSO).
+- Sites, offers, codes, customers and Worker deployment are managed from the app's **/admin** pages (protected by the YunoHost SSO). Payment, email and Cloudflare credentials are in the YunoHost **config panel**.
 
-### Pricing options (mix and match)
+### Offers (mix and match, per site or across sites)
 
 | Option | What the visitor gets |
 | --- | --- |
@@ -26,7 +28,7 @@ Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscr
 
 - Percentage or fixed-amount **discounts**. For subscriptions they apply to the first payment, N months, or every payment
 - **Free access codes** that bypass payment for N days or forever
-- Per-code limits: number of uses, expiry date, which offers it applies to
+- Per-code limits: which sites, which offers, number of uses, expiry date
 - Bulk generation and CSV export
 
 ## Repository layout

@@ -21,7 +21,7 @@ from flask import (
     url_for,
 )
 
-from . import access, codes, config, db, mailer, payments, plans, tokens
+from . import access, codes, config, db, legacy, mailer, offers, payments, plans, sites, tokens
 from .stripe_client import StripeError, verify_webhook
 
 log = logging.getLogger(__name__)
@@ -104,50 +104,63 @@ def ensure_customer():
     return customer
 
 
-def remember_return():
+def site_or_404(site_id):
+    site = sites.get(get_db(), site_id)
+    if site is None or not site.active:
+        abort(404)
+    g.site = site
+    session["site"] = site.id
+    return site
+
+
+def session_site():
+    site = sites.get(get_db(), session.get("site"))
+    return site if site is not None and site.active else None
+
+
+def remember_return(site):
     target = request.args.get("return")
-    if target and cfg().is_allowed_return(target):
+    if target and site.match(target) is not None:
         session["return"] = target
 
 
-def return_target():
+def return_target(site):
     target = session.get("return")
-    if target and cfg().is_allowed_return(target):
+    if target and site.match(target) is not None:
         return target
-    return cfg().default_return()
+    return site.default_return()
 
 
-def applied_code(plan_id=None):
+def applied_code(site, plan_id=None):
     code = session.get("code")
     if not code:
         return None
     try:
-        return codes.check(get_db(), code, plan_id)
+        return codes.check(get_db(), code, plan_id, site.id)
     except codes.CodeError:
-        if plan_id is None:
-            session.pop("code", None)
         return None
 
 
-def handoff(customer_id):
-    """Send a customer with access back to the protected site."""
+def handoff(customer_id, site):
+    """Send a customer with access to ``site`` back to it."""
     conf = cfg()
-    has_access, until = access.access_until(get_db(), customer_id)
+    has_access, until = access.access_until(get_db(), customer_id, site.id)
     if not has_access:
-        return redirect(url_for("index"))
-    target = return_target()
+        return redirect(url_for("site_page", site_id=site.id))
+    target = return_target(site)
     if not target:
         return redirect(url_for("account"))
+    base = site.match(target) or ""
     session.pop("return", None)
-    access_exp = access.now() + conf["access_recheck_hours"] * 3600
+    access_exp = access.now() + site.recheck_hours * 3600
     if until is not None:
         access_exp = min(access_exp, until)
-    token = tokens.handoff(conf["signing_secret"], customer_id, access_exp, target)
+    token = tokens.handoff(conf["signing_secret"], customer_id, site.id, access_exp, target)
     host = urlsplit(target).netloc
-    return redirect(f"https://{host}{conf['callback_prefix']}/auth?{urlencode({'t': token})}")
+    return redirect(f"https://{host}{base}{conf['callback_prefix']}/auth?{urlencode({'t': token})}")
 
 
-def offer_list(code_row):
+def offer_list(site, code_row):
     """What each stub on the ticket shows: the big number, the line under it
     and a button label that names the exact charge."""
     conf = cfg()
@@ -155,8 +168,8 @@ def offer_list(code_row):
     def money(amount):
         return plans.format_money(amount, conf)
 
-    offers = []
-    for plan in plans.build(conf):
+    result = []
+    for plan in offers.list_all(get_db(), site_id=site.id, active_only=True):
         applies = code_row is not None and not plan.custom_amount and (
             not codes.plan_ids(code_row) or plan.id in codes.plan_ids(code_row)
         )
@@ -175,7 +188,8 @@ def offer_list(code_row):
         else:
             unit = "once"
             label = f"Get it free with {code_row['code']}" if free else f"Pay {money(amount)}"
-        offers.append({
+        others = [sites_by_id().get(s) for s in plan.site_ids if s != site.id]
+        result.append({
             "plan": plan,
             "big": "Free" if free else money(amount),
             "was": money(plan.amount) if discounted else None,
@@ -183,9 +197,16 @@ def offer_list(code_row):
             "label": label,
             "free": free,
             "terms": plans.describe(plan, conf),
+            "also": [o.title for o in others if o is not None and o.active],
             "suggested_value": _minor_to_str(plan.suggested, conf) if plan.custom_amount else None,
         })
-    return offers
+    return result
+
+
+def sites_by_id():
+    if "sites_by_id" not in g:
+        g.sites_by_id = {s.id: s for s in sites.list_all(get_db())}
+    return g.sites_by_id
 
 
 def _minor_to_str(amount, conf):
@@ -223,6 +244,7 @@ def create_app(conf=None, stripe_factory=None):
     with app.app_context():
         conn = db.connect(conf["data_dir"])
         db.migrate(conn)
+        legacy.import_settings(conn, conf)
         conn.close()
 
     @app.teardown_appcontext
@@ -249,7 +271,13 @@ def create_app(conf=None, stripe_factory=None):
 
     @app.context_processor
     def inject():
-        return {"cfg": cfg(), "csrf_token": csrf_token, "money": lambda a: plans.format_money(a, cfg())}
+        brand = g.get("site") or (session_site() if request.endpoint and not request.endpoint.startswith("admin.")
+                                  else None)
+        return {
+            "cfg": cfg(), "csrf_token": csrf_token, "money": lambda a: plans.format_money(a, cfg()),
+            "brand": brand or sites.Site(title="Paywall", accent_color=sites.DEFAULT_ACCENT, support_email="",
+                                         id=""),
+        }
 
     @app.errorhandler(400)
     def bad_request(err):
@@ -262,90 +290,113 @@ def create_app(conf=None, stripe_factory=None):
 
     @app.get("/")
     def index():
-        remember_return()
+        conn = get_db()
+        target = request.args.get("return")
+        site = sites.for_url(conn, target) if target else None
+        if site is None and not target:
+            site = session_site()
+        active = sites.list_all(conn, active_only=True)
+        if site is None and len(active) == 1:
+            site = active[0]
+        if site is not None:
+            return redirect(url_for("site_page", site_id=site.id, **({"return": target} if target else {})))
+        return render_template("sites.html", sites=active)
+
+    @app.get("/s/<site_id>")
+    def site_page(site_id):
+        site = site_or_404(site_id)
+        remember_return(site)
+        conn = get_db()
         customer = current_customer()
+        has_access = False
         if customer:
             try:
-                payments.refresh_lapsed(get_db(), cfg(), customer["id"])
+                payments.refresh_lapsed(conn, cfg(), customer["id"])
             except StripeError:
                 pass
-            stay = request.args.get("stay") == "1"
-            if not stay and access.access_until(get_db(), customer["id"])[0] and return_target():
-                return handoff(customer["id"])
-        code_row = applied_code()
+            has_access = access.access_until(conn, customer["id"], site.id)[0]
+            if has_access and request.args.get("stay") != "1" and return_target(site):
+                return handoff(customer["id"], site)
+        code_row = applied_code(site)
         return render_template(
             "index.html",
-            offers=offer_list(code_row),
+            site=site,
+            offers=offer_list(site, code_row),
             code=code_row,
             code_summary=codes.summary(code_row, lambda a: plans.format_money(a, cfg())) if code_row else None,
             customer=customer,
-            has_access=bool(customer and access.access_until(get_db(), customer["id"])[0]),
+            has_access=has_access,
             payments_ready=cfg().stripe_ready,
         )
 
-    @app.post("/code")
-    def redeem_code():
+    @app.post("/s/<site_id>/code")
+    def redeem_code(site_id):
+        site = site_or_404(site_id)
         conn = get_db()
+        back = redirect(url_for("site_page", site_id=site.id, stay=1))
         if rate_limited("code", 10, 900):
             flash("Too many attempts. Please wait a few minutes and try again.", "error")
-            return redirect(url_for("index"))
-        raw = request.form.get("code", "")
+            return back
         try:
-            row = codes.check(conn, raw)
+            row = codes.check(conn, request.form.get("code", ""), site_id=site.id)
         except codes.CodeError as exc:
             record_attempt("code")
             flash(str(exc), "error")
-            return redirect(url_for("index"))
+            return back
         if row["kind"] != "free":
             session["code"] = row["code"]
-            return redirect(url_for("index"))
+            return back
         customer = ensure_customer()
         if codes.already_redeemed(conn, row["code"], customer["id"]):
             flash("You already used this code.", "error")
-            return redirect(url_for("index"))
+            return back
         with db.transaction(conn):
             payments.grant_free(conn, cfg(), row, customer)
         flash("Code accepted, enjoy!", "success")
-        return handoff(customer["id"])
+        return handoff(customer["id"], site)
 
-    @app.post("/code/clear")
-    def clear_code():
+    @app.post("/s/<site_id>/code/clear")
+    def clear_code(site_id):
+        site = site_or_404(site_id)
         session.pop("code", None)
-        return redirect(url_for("index"))
+        return redirect(url_for("site_page", site_id=site.id, stay=1))
 
-    @app.post("/checkout")
-    def checkout():
+    @app.post("/s/<site_id>/checkout")
+    def checkout(site_id):
+        site = site_or_404(site_id)
         conn = get_db()
         conf = cfg()
-        plan = plans.get(conf, request.form.get("plan", ""))
-        if plan is None:
+        back = redirect(url_for("site_page", site_id=site.id, stay=1))
+        plan = offers.get(conn, request.form.get("plan", ""))
+        if plan is None or not plan.active or site.id not in plan.site_ids:
             abort(400, "This option is not available.")
         custom_amount = None
         if plan.custom_amount:
             custom_amount = _parse_amount(request.form.get("amount"), conf)
             if custom_amount is None or custom_amount < plan.amount:
                 flash(f"Please enter at least {plans.format_money(plan.amount, conf)}.", "error")
-                return redirect(url_for("index"))
-        code_row = None if plan.custom_amount else applied_code(plan.id)
+                return back
+        code_row = None if plan.custom_amount else applied_code(site, plan.id)
         customer = ensure_customer()
         if code_row and not plan.is_subscription and codes.discounted(code_row, plan.amount) == 0:
-            # 100 % discount on a one-off plan: no payment needed.
+            # 100 % discount on a one-off offer: no payment needed.
             context = f"discount:{code_row['code']}:{customer['id']}:{plan.id}"
             with db.transaction(conn):
                 if codes.record_use(conn, code_row["code"], customer["id"], context):
                     expires = access.now() + plan.access_seconds if plan.access_seconds else None
-                    access.grant(conn, customer["id"], plan.id, expires, context, 0, conf["currency"], code_row["code"])
+                    access.grant(conn, customer["id"], plan.kind, expires, context, 0, conf["currency"],
+                                 code_row["code"], sites=plan.site_ids, offer_id=int(plan.id))
             session.pop("code", None)
-            return handoff(customer["id"])
+            return handoff(customer["id"], site)
         try:
             url = payments.create_checkout(
-                conn, conf, plan, customer, code_row=code_row, custom_amount=custom_amount,
-                return_url=return_target(), stripe=stripe(),
+                conn, conf, plan, customer, site, code_row=code_row, custom_amount=custom_amount,
+                return_url=return_target(site), stripe=stripe(),
             )
         except (payments.PaymentError, StripeError) as exc:
             log.warning("Checkout failed: %s", exc)
             flash(f"Could not start the payment: {exc}", "error")
-            return redirect(url_for("index"))
+            return back
         return redirect(url, 303)
 
     @app.get("/checkout/success")
@@ -379,11 +430,16 @@ def create_app(conf=None, stripe_factory=None):
                 link=url_for("login_page"), link_label="Sign in",
             )
         login(customer_id)
-        fallback = (checkout_session.get("metadata") or {}).get("return_url")
-        if not session.get("return") and fallback and cfg().is_allowed_return(fallback):
-            session["return"] = fallback
         session.pop("code", None)
-        return handoff(customer_id)
+        metadata = checkout_session.get("metadata") or {}
+        site = sites.get(conn, metadata.get("site"))
+        if site is None or not site.active:
+            return redirect(url_for("account"))
+        session["site"] = site.id
+        fallback = metadata.get("return_url")
+        if not session.get("return") and fallback and site.match(fallback) is not None:
+            session["return"] = fallback
+        return handoff(customer_id, site)
 
     @app.post("/webhook/stripe")
     def stripe_webhook():
@@ -405,7 +461,6 @@ def create_app(conf=None, stripe_factory=None):
     @app.route("/login", methods=["GET", "POST"])
     def login_page():
         conf = cfg()
-        remember_return()
         if request.method == "GET":
             return render_template("login.html")
         if not conf["enable_email_login"]:
@@ -434,8 +489,9 @@ def create_app(conf=None, stripe_factory=None):
             (tokens.hash_token(token), target, new_email, access.now() + LOGIN_TOKEN_TTL),
         )
         link = f"{conf.public_url}/login/verify?{urlencode({'t': token})}"
+        site = session_site()
         try:
-            mailer.send_login_link(conf, email, link)
+            mailer.send_login_link(conf, email, link, site.title if site else "the paywall")
         except OSError as exc:
             log.error("Could not send email to %s: %s", email, exc)
             flash("We could not send the email. Please contact the site owner.", "error")
@@ -465,8 +521,9 @@ def create_app(conf=None, stripe_factory=None):
                 access.merge(conn, current, target)
         login(target)
         flash("You are signed in.", "success")
-        if access.access_until(conn, target)[0] and return_target():
-            return handoff(target)
+        site = session_site()
+        if site and access.access_until(conn, target, site.id)[0] and return_target(site):
+            return handoff(target, site)
         return redirect(url_for("account"))
 
     @app.get("/account")
@@ -479,22 +536,24 @@ def create_app(conf=None, stripe_factory=None):
             payments.refresh_lapsed(conn, cfg(), customer["id"])
         except StripeError:
             pass
-        has_access, until = access.access_until(conn, customer["id"])
+        by_site = access.access_by_site(conn, customer["id"])
         entitlements = access.entitlements_for(conn, customer["id"])
         return render_template(
-            "account.html", customer=customer, has_access=has_access, until=until, entitlements=entitlements,
+            "account.html", customer=customer,
+            open_sites=[(s, by_site[s.id]) for s in sites.list_all(conn, active_only=True) if s.id in by_site],
+            entitlements=entitlements, site_names={s.id: s.title for s in sites.list_all(conn)},
             can_manage=bool(customer["stripe_customer_id"] and cfg().stripe_ready
                             and any(e["kind"] == "subscription" for e in entitlements)),
-            site_url=return_target(), now=access.now(),
+            now=access.now(),
         )
 
-    @app.get("/go")
-    def go():
+    @app.get("/go/<site_id>")
+    def go(site_id):
+        site = site_or_404(site_id)
         customer = current_customer()
-        remember_return()
         if customer is None:
-            return redirect(url_for("index"))
-        return handoff(customer["id"])
+            return redirect(url_for("site_page", site_id=site.id))
+        return handoff(customer["id"], site)
 
     @app.post("/account/portal")
     def billing_portal():
@@ -510,12 +569,14 @@ def create_app(conf=None, stripe_factory=None):
 
     @app.post("/logout")
     def logout():
+        site = session_site()
         session.clear()
         flash("You are signed out of the paywall.", "success")
-        target = cfg().default_return()
+        target = site.default_return() if site else None
         if target:
-            host = urlsplit(target).netloc
-            return redirect(f"https://{host}{cfg()['callback_prefix']}/logout")
+            parts = urlsplit(target)
+            base = site.match(target) or ""
+            return redirect(f"https://{parts.netloc}{base}{cfg()['callback_prefix']}/logout")
         return redirect(url_for("index"))
 
     from .admin import bp as admin_bp

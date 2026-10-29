@@ -26,7 +26,8 @@ ynh_config_change_url_nginx
 #=================================================
 ynh_script_progression "Updating the paywall configuration..."
 
-routes_error="$(ynh_app_setting_get --key=protected_routes | _paywall_cli validate-routes --domain="$new_domain")"
+# A site route must not cover the paywall's new domain
+routes_error="$(_paywall_cli check-sites --domain="$new_domain")"
 if [ -n "$routes_error" ]; then
     ynh_die "$routes_error"
 fi

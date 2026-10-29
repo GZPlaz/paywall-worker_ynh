@@ -4,25 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>{% block title %}Admin{% endblock %} – {{ cfg.paywall_title }}</title>
+  <title>{% block title %}Admin{% endblock %} – Paywall admin</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>:root { --accent: {{ cfg.accent_color }}; --accent-ink: {{ cfg.accent_ink }}; }</style>
-</head>
+  </head>
 <body>
   <div class="desk">
     {% set active = request.endpoint %}
     <header class="desk-head">
-      <span class="name">{{ cfg.paywall_title }}</span>
+      <span class="name">Paywall admin</span>
       <nav aria-label="Admin">
         <a href="{{ url_for('admin.dashboard') }}" {% if active == 'admin.dashboard' %}aria-current="page"{% endif %}>Overview</a>
+        <a href="{{ url_for('admin.sites_page') }}" {% if active in ('admin.sites_page', 'admin.new_site', 'admin.edit_site', 'admin.save_site') %}aria-current="page"{% endif %}>Sites</a>
+        <a href="{{ url_for('admin.offers_page') }}" {% if active in ('admin.offers_page', 'admin.new_offer', 'admin.edit_offer', 'admin.save_offer') %}aria-current="page"{% endif %}>Offers</a>
         <a href="{{ url_for('admin.codes_page') }}" {% if active == 'admin.codes_page' %}aria-current="page"{% endif %}>Codes</a>
         <a href="{{ url_for('admin.customers_page') }}" {% if active in ('admin.customers_page', 'admin.customer_page') %}aria-current="page"{% endif %}>Customers</a>
         <a href="{{ url_for('admin.cloudflare_page') }}" {% if active == 'admin.cloudflare_page' %}aria-current="page"{% endif %}>Cloudflare</a>
-        <a href="{{ url_for('index', stay=1) }}" target="_blank" rel="noopener">Open the paywall</a>
+        <a href="{{ url_for('index') }}" target="_blank" rel="noopener">Open the paywall</a>
       </nav>
     </header>
     {% include "_notices.html" %}
     {% block content %}{% endblock %}
   </div>
+  <script>
+    document.querySelectorAll("[data-check-all]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        button.closest("fieldset").querySelectorAll("input[type=checkbox]").forEach(function (box) { box.checked = true; });
+      });
+    });
+  </script>
 </body>
 </html>

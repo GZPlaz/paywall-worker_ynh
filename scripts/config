@@ -38,22 +38,6 @@ EOT
 }
 
 #=================================================
-# SPECIFIC VALIDATORS FOR TOML SHORT KEYS
-#=================================================
-
-validate__protected_routes() {
-    printf '%s' "${protected_routes:-}" | _paywall_cli validate-routes --domain="$domain"
-}
-
-validate__enable_one_time() {
-    if [ "${payment_provider:-stripe}" == "stripe" ] \
-        && [ "${enable_one_time:-0}" != "1" ] && [ "${enable_subscription:-0}" != "1" ] \
-        && [ "${enable_pass:-0}" != "1" ] && [ "${enable_pwyw:-0}" != "1" ]; then
-        echo "Enable at least one paid option, or choose 'No online payment' in the Payments tab."
-    fi
-}
-
-#=================================================
 # SPECIFIC ACTIONS (BUTTONS)
 #=================================================
 

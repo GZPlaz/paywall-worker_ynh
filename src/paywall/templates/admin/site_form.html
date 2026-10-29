@@ -1,0 +1,72 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ site.name if site else "New site" }}{% endblock %}
+{% block content %}
+<form class="sheet" method="post" action="{{ url_for('admin.save_site', site_id=site.id) if site else url_for('admin.save_site') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>{% if site %}{{ site.name }}{% else %}New site{% endif %}</h2>
+
+  <div class="fields">
+    <div>
+      <label for="id">Short name</label>
+      {% if create %}
+        <input id="id" name="id" value="{{ values.id or '' }}" pattern="[a-z0-9][a-z0-9-]{0,31}" required placeholder="blog">
+        <p class="hint">Lowercase, used in URLs. Cannot be changed later.</p>
+      {% else %}
+        <input id="id" value="{{ site.id }}" disabled>
+      {% endif %}
+    </div>
+    <div><label for="name">Name in the admin</label><input id="name" name="name" value="{{ values.name or '' }}" placeholder="My blog"></div>
+    <div><label for="recheck_hours">Re-check access every (hours)</label><input id="recheck_hours" name="recheck_hours" type="number" min="1" max="8760" value="{{ values.recheck_hours or 24 }}"></div>
+  </div>
+
+  <h3 style="margin:24px 0 10px">Protection</h3>
+  <div class="fields">
+    <div class="span">
+      <label for="routes">Routes, one per line</label>
+      <textarea id="routes" name="routes" rows="3" class="mono" placeholder="blog.example.com/*">{{ values.routes or '' }}</textarea>
+      <p class="hint">Cloudflare route patterns, e.g. <span class="mono">blog.example.com/*</span> or <span class="mono">example.com/premium/*</span>. The domain must be proxied by Cloudflare.</p>
+    </div>
+    <div class="span">
+      <label for="bypass_paths">Public paths, one per line</label>
+      <textarea id="bypass_paths" name="bypass_paths" rows="3" class="mono">{{ values.bypass_paths or '' }}</textarea>
+      <p class="hint">Stay free on this site. End with <span class="mono">*</span> for a prefix, e.g. <span class="mono">/assets/*</span>.</p>
+    </div>
+    <div class="span checks">
+      <label><input type="checkbox" name="active" value="1" {% if values.active %}checked{% endif %}> Protect this site (when off, its routes are removed from the Worker)</label>
+    </div>
+  </div>
+
+  <h3 style="margin:24px 0 10px">Paywall page</h3>
+  <div class="fields">
+    <div class="span"><label for="title">Heading</label><input id="title" name="title" value="{{ values.title or '' }}" required></div>
+    <div class="span"><label for="description">Text under the heading</label><textarea id="description" name="description" rows="3">{{ values.description or '' }}</textarea></div>
+    <div><label for="accent_color">Button color</label><input id="accent_color" name="accent_color" type="color" value="{{ values.accent_color or '#1b2a41' }}"></div>
+    <div><label for="support_email">Support email (optional)</label><input id="support_email" name="support_email" type="email" value="{{ values.support_email or '' }}"></div>
+    <div class="checks"><label><input type="checkbox" name="show_codes" value="1" {% if values.show_codes %}checked{% endif %}> Show the code field</label></div>
+  </div>
+
+  <h3 style="margin:24px 0 10px">Offers on this site</h3>
+  {% if offers %}
+    <fieldset class="checks">
+      <legend>Sold on this page (an offer linked to several sites opens all of them)</legend>
+      {% for o in offers %}
+        <label><input type="checkbox" name="offers" value="{{ o.id }}" {% if o.id in linked_offers %}checked{% endif %}> {{ o.name }}{% if o.site_ids %} <span class="hint">({{ site_names(o.site_ids) }})</span>{% endif %}</label>
+      {% endfor %}
+    </fieldset>
+  {% else %}
+    <p class="hint">No offers yet. Save the site, then <a href="{{ url_for('admin.new_offer') }}">create an offer</a> and tick this site.</p>
+  {% endif %}
+
+  <p style="margin-top:22px"><button type="submit" class="btn">{% if create %}Add the site{% else %}Save the site{% endif %}</button>
+    <a href="{{ url_for('admin.sites_page') }}" style="margin-left:12px">Cancel</a></p>
+</form>
+
+{% if site %}
+<form class="sheet" method="post" action="{{ url_for('admin.delete_site', site_id=site.id) }}" onsubmit="return confirm('Delete {{ site.name }}? People lose access to it, and its routes are removed from the Worker.')">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Delete this site</h2>
+  <p class="hint">To pause it instead, untick "Protect this site". Deleting removes its links to offers, codes and existing access.</p>
+  <p style="margin-top:12px"><button class="btn danger small" type="submit">Delete {{ site.name }}</button></p>
+</form>
+{% endif %}
+{% endblock %}

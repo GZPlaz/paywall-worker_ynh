@@ -1,6 +1,6 @@
-"""Offers built from the configuration."""
+"""Offer value objects and price formatting."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
 DAY = 86400
@@ -23,6 +23,10 @@ class Plan:
     trial_days: int = 0
     suggested: int | None = None
     custom_amount: bool = False
+    kind: str = "one_time"     # one_time | subscription | pass | pwyw
+    site_ids: list = field(default_factory=list)
+    active: bool = True
+    position: int = 0
 
     @property
     def is_subscription(self):
@@ -59,44 +63,6 @@ def describe_duration(seconds):
         return f"{days} day" + ("s" if days > 1 else "")
     hours = max(1, seconds // 3600)
     return f"{hours} hour" + ("s" if hours > 1 else "")
-
-
-def build(cfg):
-    plans = []
-    if cfg["enable_one_time"]:
-        days = cfg["one_time_access_days"]
-        plans.append(Plan(
-            id="one_time", name=cfg["one_time_name"], mode="payment",
-            amount=to_minor(cfg["one_time_price"], cfg),
-            access_seconds=days * DAY if days else None,
-        ))
-    if cfg["enable_subscription"]:
-        plans.append(Plan(
-            id="subscription", name=cfg["subscription_name"], mode="subscription",
-            amount=to_minor(cfg["subscription_price"], cfg), access_seconds=None,
-            interval=cfg["subscription_interval"], trial_days=cfg["subscription_trial_days"],
-        ))
-    if cfg["enable_pass"]:
-        plans.append(Plan(
-            id="pass", name=cfg["pass_name"], mode="payment",
-            amount=to_minor(cfg["pass_price"], cfg), access_seconds=cfg["pass_hours"] * 3600,
-        ))
-    if cfg["enable_pwyw"]:
-        days = cfg["pwyw_access_days"]
-        minimum = to_minor(cfg["pwyw_min_price"], cfg)
-        plans.append(Plan(
-            id="pwyw", name=cfg["pwyw_name"], mode="payment", amount=minimum,
-            access_seconds=days * DAY if days else None, custom_amount=True,
-            suggested=max(minimum, to_minor(cfg["pwyw_suggested_price"], cfg)),
-        ))
-    return plans
-
-
-def get(cfg, plan_id):
-    for plan in build(cfg):
-        if plan.id == plan_id:
-            return plan
-    return None
 
 
 def describe(plan, cfg):

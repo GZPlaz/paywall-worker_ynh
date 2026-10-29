@@ -1,4 +1,5 @@
 {% extends "admin/base.html" %}
+{% from "admin/_fields.html" import site_checks %}
 {% block title %}Codes{% endblock %}
 {% block content %}
 <form class="sheet" method="post" action="{{ url_for('admin.create_code') }}">
@@ -33,12 +34,15 @@
     <div><label for="expires">Stops working after</label><input id="expires" name="expires" type="date"></div>
   </div>
   <div class="fields" style="margin-top:14px">
-    <fieldset class="checks span">
-      <legend>Works on (none ticked: everything)</legend>
-      {% for plan in plans %}
-        <label><input type="checkbox" name="plans" value="{{ plan.id }}"> {{ plan.name }}</label>
+    {{ site_checks(sites, legend="Sites (none ticked: every site)", hint="A free-access code opens every site it is linked to. A discount code works on the linked sites' paywall pages.") }}
+    {% if offers %}
+    <fieldset class="checks span" data-kind="percent fixed">
+      <legend>Offers it discounts (none ticked: all of them)</legend>
+      {% for o in offers %}
+        <label><input type="checkbox" name="plans" value="{{ o.id }}"> {{ o.name }} <span class="hint">({{ site_names(o.site_ids) }})</span></label>
       {% endfor %}
     </fieldset>
+    {% endif %}
     <div class="span"><label for="note">Note for yourself</label><input id="note" name="note"></div>
     <div><button type="submit" class="btn">Create codes</button></div>
   </div>
@@ -50,12 +54,23 @@
     <a class="btn quiet small" href="{{ url_for('admin.export_codes') }}">Download CSV</a>
   </div>
   <div class="table-wrap"><table class="data">
-    <tr><th>Code</th><th>Effect</th><th>Works on</th><th class="num">Used</th><th>Stops</th><th>State</th><th></th></tr>
+    <tr><th>Code</th><th>Effect</th><th>Sites</th><th>Offers</th><th class="num">Used</th><th>Stops</th><th>State</th><th></th></tr>
     {% for c in codes %}
       <tr>
         <td><span class="code-mark">{{ c.code }}</span>{% if c.note %}<br><span class="hint">{{ c.note }}</span>{% endif %}</td>
         <td>{{ summary(c) }}</td>
-        <td>{% for pid in c.plans.split(',') if pid %}{{ plan_names.get(pid, pid) }}{% if not loop.last %}, {% endif %}{% else %}everything{% endfor %}</td>
+        <td>
+          {% set linked = code_sites.get(c.code.upper(), []) %}
+          <details>
+            <summary>{{ site_names(linked) }}</summary>
+            <form method="post" action="{{ url_for('admin.update_code_sites', code=c.code) }}" class="code-sites">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              {% for s in sites %}<label><input type="checkbox" name="sites" value="{{ s.id }}" {% if s.id in linked %}checked{% endif %}> {{ s.name }}</label>{% endfor %}
+              <button class="btn quiet small" type="submit">Save sites</button>
+            </form>
+          </details>
+        </td>
+        <td>{% if c.kind == 'free' %}<span class="hint">n/a</span>{% else %}{% for pid in c.plans.split(',') if pid %}{{ offer_names.get(pid, 'removed offer') }}{% if not loop.last %}, {% endif %}{% else %}all{% endfor %}{% endif %}</td>
         <td class="num">{{ c.uses }}{% if c.max_uses %} of {{ c.max_uses }}{% endif %}</td>
         <td>{{ c.expires_at|dt if c.expires_at else 'never' }}</td>
         <td>
@@ -76,7 +91,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="7" class="hint">No codes yet.</td></tr>
+      <tr><td colspan="8" class="hint">No codes yet.</td></tr>
     {% endfor %}
   </table></div>
 </section>

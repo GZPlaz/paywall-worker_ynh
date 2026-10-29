@@ -75,7 +75,75 @@ MIGRATIONS = [
     );
     CREATE INDEX attempts_lookup ON attempts(ip, kind, created_at);
     """,
+    # v2: several sites, each with its own page settings, and offers / codes /
+    # access that can be linked to any number of them.
+    """
+    CREATE TABLE sites (
+        id TEXT PRIMARY KEY,             -- slug, also used in URLs and cookie names
+        name TEXT NOT NULL,              -- internal label
+        title TEXT NOT NULL,             -- paywall page heading
+        description TEXT NOT NULL DEFAULT '',
+        accent_color TEXT NOT NULL DEFAULT '#1b2a41',
+        support_email TEXT NOT NULL DEFAULT '',
+        routes TEXT NOT NULL DEFAULT '', -- Cloudflare route patterns, one per line
+        bypass_paths TEXT NOT NULL DEFAULT '',
+        recheck_hours INTEGER NOT NULL DEFAULT 24,
+        show_codes INTEGER NOT NULL DEFAULT 1,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,              -- one_time | subscription | pass | pwyw
+        amount INTEGER NOT NULL,         -- price, or minimum for pwyw (smallest unit)
+        suggested INTEGER,               -- pwyw only
+        interval TEXT,                   -- subscriptions: day | week | month | year
+        trial_days INTEGER NOT NULL DEFAULT 0,
+        access_seconds INTEGER,          -- one-off offers; NULL = no end date
+        active INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE offer_sites (
+        offer_id INTEGER NOT NULL REFERENCES offers(id) ON DELETE CASCADE,
+        site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE ON UPDATE CASCADE,
+        PRIMARY KEY (offer_id, site_id)
+    );
+
+    -- No rows for a code = it works on every site.
+    CREATE TABLE code_sites (
+        code TEXT NOT NULL COLLATE NOCASE REFERENCES codes(code) ON DELETE CASCADE,
+        site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE ON UPDATE CASCADE,
+        PRIMARY KEY (code, site_id)
+    );
+
+    CREATE TABLE entitlement_sites (
+        entitlement_id INTEGER NOT NULL REFERENCES entitlements(id) ON DELETE CASCADE,
+        site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE ON UPDATE CASCADE,
+        PRIMARY KEY (entitlement_id, site_id)
+    );
+    CREATE INDEX entitlement_sites_site ON entitlement_sites(site_id);
+
+    ALTER TABLE entitlements ADD COLUMN offer_id INTEGER;
+
+    CREATE TABLE meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    );
+    """,
 ]
+
+
+def get_meta(conn, key):
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_meta(conn, key, value):
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
 
 
 def connect(data_dir):
