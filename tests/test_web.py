@@ -365,3 +365,16 @@ def test_every_admin_page_renders_with_data(app, client):
         resp = client.get(path, headers=headers)
         assert resp.status_code == 200, path
     assert "Lifetime access" in client.get("/admin/codes", headers=headers).get_data(as_text=True)
+
+
+def test_admin_accepts_the_sso_basic_auth_user(client):
+    # SSOwat sends YNH_USER (dropped by gunicorn: underscores) and Basic auth.
+    import base64
+    basic = base64.b64encode(b"alice:-").decode()
+    assert client.get("/admin/", headers={"Authorization": f"Basic {basic}"}).status_code == 200
+
+
+def test_fresh_install_root_points_admins_to_setup(tmp_path):
+    fresh = create_app(make_config(tmp_path))
+    html = https_client(fresh).get("/").get_data(as_text=True)
+    assert "The paywall is running" in html and "Open the admin pages" in html

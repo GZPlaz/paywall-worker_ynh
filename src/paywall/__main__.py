@@ -37,9 +37,9 @@ def cmd_config_defaults(_args):
     for key, (kind, default) in config.SCHEMA.items():
         if key in config.DERIVED_KEYS or key in SECRET_KEYS or key in ("domain", "path", "port"):
             continue
+        # Empty defaults are written too: YunoHost refuses to show a config
+        # panel whose questions have no stored setting.
         value = ("1" if default else "0") if kind == "bool" else str(default)
-        if value == "":
-            continue
         out.write(key.encode() + b"\0" + value.encode() + b"\0")
 
 

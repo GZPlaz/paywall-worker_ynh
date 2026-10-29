@@ -4,7 +4,7 @@
 
 Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscriptions, time passes, pay-what-you-want, discount codes and free access codes.
 
-**Shipped version:** 1.1.0~ynh1
+**Shipped version:** 1.1.1~ynh1
 
 ## Overview
 

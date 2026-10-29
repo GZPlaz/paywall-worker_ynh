@@ -11,12 +11,22 @@ from .web import cfg, get_db
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+def sso_user():
+    """User name passed by SSOwat. It sends it both as ``YNH_USER`` and as
+    HTTP Basic auth; gunicorn drops headers containing underscores, so the
+    Basic auth user name is what normally reaches the app."""
+    auth = request.authorization
+    if auth is not None and auth.type == "basic" and auth.username:
+        return auth.username
+    return request.headers.get("Ynh-User") or request.headers.get("Remote-User")
+
+
 @bp.before_request
 def require_admin():
     # SSOwat only lets members of the app's "admin" permission reach /admin and
     # then passes the user name along. Refuse anything that did not go
     # through it (e.g. the port reached directly).
-    user = request.headers.get("Ynh-User") or request.headers.get("Remote-User")
+    user = sso_user()
     if not user and not current_app.config.get("ADMIN_WITHOUT_SSO"):
         abort(403)
     g.admin_user = user or "admin"

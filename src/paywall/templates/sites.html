@@ -3,8 +3,13 @@
 {% block content %}
 <section class="window">
   {% include "_notices.html" %}
-  <h1>{% if sites %}Where to?{% else %}Nothing here yet{% endif %}</h1>
-  <p class="lede">{% if sites %}This paywall serves several sites. Pick the one you want to open.{% else %}No site is protected by this paywall yet.{% endif %}</p>
+  {% if sites %}
+    <h1>Where to?</h1>
+    <p class="lede">This paywall serves several sites. Pick the one you want to open.</p>
+  {% else %}
+    <h1>The paywall is running</h1>
+    <p class="lede">No site is set up yet, so there is nothing to pay for here.</p>
+  {% endif %}
 </section>
 {% if sites %}
 <div class="ticket">
@@ -14,6 +19,14 @@
       {% if s.description %}<p class="terms">{{ s.description|truncate(140) }}</p>{% endif %}
     </div>
   {% endfor %}
+</div>
+{% else %}
+<div class="ticket">
+  <div class="stub plain">
+    <h2>Setting it up?</h2>
+    <p class="terms">Open the admin pages, add a site with its routes and create an offer or a code. Visitors of your sites are then sent to that site's own paywall page, not to this one.</p>
+    <p class="act" style="margin-top:14px"><a class="btn" href="{{ url_for('admin.dashboard') }}">Open the admin pages</a></p>
+  </div>
 </div>
 {% endif %}
 {% endblock %}
