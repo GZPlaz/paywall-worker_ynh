@@ -1,0 +1,52 @@
+#!/bin/bash
+
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# INSTALL THE APP
+#=================================================
+ynh_script_progression "Setting up source files..."
+
+_install_sources
+_install_cli
+_set_permissions
+_install_python_deps
+
+#=================================================
+# APP INITIAL CONFIGURATION
+#=================================================
+ynh_script_progression "Configuring the paywall..."
+
+_set_default_settings
+_write_config
+_paywall_cli init-db
+
+#=================================================
+# SYSTEM CONFIGURATION
+#=================================================
+ynh_script_progression "Adding system configurations related to $app..."
+
+ynh_config_add_nginx
+
+ynh_config_add_systemd
+yunohost service add "$app" --description="Paywall for Cloudflare-proxied sites" --log="$log_file"
+
+ynh_config_add_logrotate "$log_file"
+
+#=================================================
+# START SYSTEMD SERVICE
+#=================================================
+ynh_script_progression "Starting $app's systemd service..."
+
+ynh_systemctl --service="$app" --action="start" --log_path="$log_file" --wait_until="Listening at"
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression "Installation of $app completed"

@@ -1,0 +1,7 @@
+#!/bin/bash
+# Command line tool for the __APP__ paywall. Run it as root, e.g.:
+#   __INSTALL_DIR__/paywall-cli codes create --kind free --days 30
+#   __INSTALL_DIR__/paywall-cli --help
+cd "__INSTALL_DIR__/app" || exit 1
+exec sudo -u "__APP__" env PAYWALL_CONFIG="__INSTALL_DIR__/config.json" PYTHONPATH="__INSTALL_DIR__/app" \
+    "__INSTALL_DIR__/venv/bin/python" -m paywall "$@"

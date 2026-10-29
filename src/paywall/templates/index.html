@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hero">
+  <div class="lock" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+  </div>
+  <h1>{{ cfg.paywall_title }}</h1>
+  <p>{{ cfg.paywall_description }}</p>
+</header>
+
+{% if has_access %}
+  <div class="card center section">
+    <p>You already have access.</p>
+    <a class="button" href="{{ url_for('account') }}">Go to my account</a>
+  </div>
+{% endif %}
+
+{% if offers %}
+  {% if not payments_ready and cfg.payment_provider == 'stripe' %}
+    <div class="flash error">Online payments are not configured yet. Access codes still work.</div>
+  {% endif %}
+  {% if cfg.payment_provider == 'stripe' %}
+  <div class="grid">
+    {% for offer in offers %}
+      <form class="card plan" method="post" action="{{ url_for('checkout') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="plan" value="{{ offer.plan.id }}">
+        <h2>{{ offer.plan.name }}</h2>
+        <div class="price">
+          {% if offer.discounted %}<s>{{ offer.price }}</s>{{ offer.discounted }}{% else %}{{ offer.price }}{% endif %}
+        </div>
+        <p>{{ offer.description }}</p>
+        {% if offer.plan.custom_amount %}
+          <div>
+            <label for="amount-{{ offer.plan.id }}">Your price ({{ cfg.currency|upper }})</label>
+            <input id="amount-{{ offer.plan.id }}" name="amount" inputmode="decimal" value="{{ offer.suggested_value }}" required>
+          </div>
+        {% endif %}
+        <button type="submit" {% if not payments_ready and not offer.free %}disabled{% endif %}>
+          {% if offer.free %}Get it free{% elif offer.plan.is_subscription and offer.plan.trial_days %}Start free trial{% elif offer.plan.is_subscription %}Subscribe{% else %}Pay{% endif %}
+        </button>
+      </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% elif cfg.payment_provider == 'stripe' %}
+  <p class="center muted">No paid option is available right now.</p>
+{% endif %}
+
+{% if cfg.show_codes_field %}
+  <div class="card section narrow" style="margin-left:auto;margin-right:auto">
+    {% if code %}
+      <p style="margin-top:0">Code <b>{{ code.code }}</b> applied: {{ code_summary }}.</p>
+      <form method="post" action="{{ url_for('clear_code') }}" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="secondary small" type="submit">Remove code</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('redeem_code') }}" class="row">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <div>
+          <label for="code">Have a code?</label>
+          <input id="code" name="code" autocomplete="off" autocapitalize="characters" placeholder="Discount or access code" required>
+        </div>
+        <button type="submit" class="secondary">Apply</button>
+      </form>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="links">
+  {% if customer %}
+    <a href="{{ url_for('account') }}">My account</a>
+  {% elif cfg.enable_email_login %}
+    <a href="{{ url_for('login_page') }}">Already paid? Restore access</a>
+  {% endif %}
+</div>
+{% endblock %}

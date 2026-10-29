@@ -1,0 +1,54 @@
+#!/bin/bash
+
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# RESTORE THE APP MAIN DIR AND DATA
+#=================================================
+ynh_script_progression "Restoring the app main directory..."
+
+ynh_restore "$install_dir"
+
+ynh_restore "$data_dir"
+
+# Use the consistent snapshot taken at backup time
+if [ -f "$data_dir/backup.sqlite3" ]; then
+    rm -f "$data_dir/paywall.sqlite3-wal" "$data_dir/paywall.sqlite3-shm"
+    mv "$data_dir/backup.sqlite3" "$data_dir/paywall.sqlite3"
+fi
+
+_set_permissions
+_install_python_deps
+
+#=================================================
+# RESTORE SYSTEM CONFIGURATIONS
+#=================================================
+ynh_script_progression "Restoring system configurations related to $app..."
+
+ynh_restore "/etc/nginx/conf.d/$domain.d/$app.conf"
+
+ynh_restore "/etc/systemd/system/$app.service"
+systemctl enable "$app.service" --quiet
+yunohost service add "$app" --description="Paywall for Cloudflare-proxied sites" --log="$log_file"
+
+ynh_restore "/etc/logrotate.d/$app"
+
+#=================================================
+# RELOAD NGINX AND THE APP SERVICE
+#=================================================
+ynh_script_progression "Reloading NGINX web server and $app's service..."
+
+ynh_systemctl --service="$app" --action="start" --log_path="$log_file" --wait_until="Listening at"
+
+ynh_systemctl --service=nginx --action=reload
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression "Restoration completed for $app"

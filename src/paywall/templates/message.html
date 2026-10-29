@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ cfg.paywall_title }}{% endblock %}
+{% block wrap_class %}narrow{% endblock %}
+{% block content %}
+<header class="hero">
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+</header>
+<div class="links">
+  {% if link %}<a class="button" href="{{ link }}">{{ link_label }}</a>{% endif %}
+  <a href="{{ url_for('index') }}">Back to {{ cfg.paywall_title }}</a>
+</div>
+{% endblock %}

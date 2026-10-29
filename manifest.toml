@@ -1,0 +1,87 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/manifest.v2.schema.json
+
+packaging_format = 2
+
+id = "paywall_worker"
+name = "Paywall Worker"
+description.en = "Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscriptions, passes and access codes"
+description.fr = "Placez un paywall devant n'importe quel site derrière Cloudflare : paiement unique, abonnements, pass et codes d'accès"
+
+version = "1.0.0~ynh1"
+
+maintainers = []
+
+[upstream]
+license = "MIT"
+code = "https://github.com/GZPlaz/paywall-worker_ynh"
+
+[integration]
+yunohost = ">= 12.0.0"
+helpers_version = "2.1"
+architectures = "all"
+multi_instance = true
+ldap = false
+sso = false
+disk = "60M"
+ram.build = "150M"
+ram.runtime = "80M"
+
+[install]
+    [install.domain]
+    # Use a dedicated (sub)domain such as pay.example.com. It must NOT be
+    # one of the sites protected by the paywall.
+    type = "domain"
+
+    [install.path]
+    type = "path"
+    default = "/"
+
+    [install.init_admin_permission]
+    help.en = "Who can open the paywall admin pages (codes, customers, Cloudflare)"
+    type = "group"
+    default = "admins"
+
+    [install.paywall_title]
+    ask.en = "Title shown on the paywall page"
+    ask.fr = "Titre affiché sur la page du paywall"
+    type = "string"
+    default = "Members only"
+
+    [install.currency]
+    ask.en = "Currency"
+    ask.fr = "Devise"
+    type = "select"
+    choices = ["usd", "eur", "gbp", "cad", "aud", "nzd", "chf", "sek", "nok", "dkk", "pln", "czk", "brl", "mxn", "inr", "sgd", "hkd", "jpy", "krw"]
+    default = "usd"
+
+    [install.payment_provider]
+    ask.en = "How do visitors pay?"
+    ask.fr = "Comment les visiteurs paient-ils ?"
+    help.en = "Choose 'none' to only let people in with access codes (or manual grants)."
+    type = "select"
+    choices.stripe = "Stripe (cards, wallets...)"
+    choices.none = "No online payment (access codes only)"
+    default = "stripe"
+
+[resources]
+    [resources.system_user]
+
+    [resources.install_dir]
+
+    [resources.data_dir]
+
+    [resources.permissions]
+    # The paywall itself must stay public, otherwise nobody can pay.
+    main.url = "/"
+    main.allowed = "visitors"
+    main.show_tile = false
+    main.protected = true
+
+    admin.url = "/admin"
+    admin.show_tile = true
+
+    [resources.ports]
+    main.default = 8095
+
+    [resources.apt]
+    packages = "python3, python3-venv, python3-pip, sqlite3"

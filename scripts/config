@@ -1,0 +1,82 @@
+#!/bin/bash
+
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# SPECIFIC GETTERS FOR TOML SHORT KEY
+#=================================================
+
+get__webhook_info() {
+    local url="https://$domain${path%/}/webhook/stripe"
+    cat <<EOT
+style: "info"
+ask:
+  en: "Stripe webhook URL: $url"
+EOT
+}
+
+get__worker_status() {
+    local status style="info"
+    status="$(_paywall_cli worker-status 2>/dev/null || echo "Unknown")"
+    case "$status" in
+        Deployed*) style="success" ;;
+        *failed*) style="danger" ;;
+        "Never deployed"*|"Not deployed"*) style="warning" ;;
+    esac
+    # Keep the YAML valid whatever the message contains
+    status="${status//\"/\'}"
+    cat <<EOT
+style: "$style"
+ask:
+  en: "Cloudflare Worker: $status"
+EOT
+}
+
+#=================================================
+# SPECIFIC VALIDATORS FOR TOML SHORT KEYS
+#=================================================
+
+validate__protected_routes() {
+    printf '%s' "${protected_routes:-}" | _paywall_cli validate-routes --domain="$domain"
+}
+
+validate__enable_one_time() {
+    if [ "${payment_provider:-stripe}" == "stripe" ] \
+        && [ "${enable_one_time:-0}" != "1" ] && [ "${enable_subscription:-0}" != "1" ] \
+        && [ "${enable_pass:-0}" != "1" ] && [ "${enable_pwyw:-0}" != "1" ]; then
+        echo "Enable at least one paid option, or choose 'No online payment' in the Payments tab."
+    fi
+}
+
+#=================================================
+# SPECIFIC ACTIONS (BUTTONS)
+#=================================================
+
+run__deploy_worker() {
+    ynh_script_progression "Deploying the Worker to Cloudflare..."
+    if ! _paywall_cli deploy-worker; then
+        ynh_die "Cloudflare deployment failed, see the messages above."
+    fi
+    ynh_script_progression "The Worker is deployed"
+}
+
+#=================================================
+# GENERIC FINALIZATION
+#=================================================
+
+ynh_app_config_apply() {
+    _ynh_app_config_apply
+
+    ynh_script_progression "Applying the new configuration..."
+    _write_config
+    ynh_systemctl --service="$app" --action="restart" --log_path="$log_file" --wait_until="Listening at"
+
+    _auto_deploy_worker
+}
+
+ynh_app_config_run "$1"

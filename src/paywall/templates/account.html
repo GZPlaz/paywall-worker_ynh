@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}My account · {{ cfg.paywall_title }}{% endblock %}
+{% block wrap_class %}narrow{% endblock %}
+{% block content %}
+<header class="hero">
+  <h1>My account</h1>
+  <p>{{ customer.email or "No email saved yet" }}</p>
+</header>
+
+<div class="card">
+  {% if has_access %}
+    <p style="margin-top:0"><span class="badge ok">Active</span>
+      {% if until %}Access until {{ until|dt }}{% else %}Unlimited access{% endif %}</p>
+    {% if site_url %}<a class="button" href="{{ url_for('go') }}">Continue to the site</a>{% endif %}
+  {% else %}
+    <p style="margin-top:0"><span class="badge off">No active access</span></p>
+    <a class="button" href="{{ url_for('index', stay=1) }}">See options</a>
+  {% endif %}
+</div>
+
+{% if entitlements %}
+<div class="card section">
+  <h3 style="margin-top:0">History</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Type</th><th>Since</th><th>Until</th><th>Status</th></tr>
+    {% for e in entitlements %}
+      <tr>
+        <td>{{ e.kind|replace('_', ' ') }}{% if e.code %} <span class="muted">({{ e.code }})</span>{% endif %}</td>
+        <td>{{ e.starts_at|dt }}</td>
+        <td>{{ e.expires_at|dt if e.expires_at else "forever" }}</td>
+        <td>{% if e.status == 'active' and (not e.expires_at or e.expires_at > now) %}<span class="badge ok">active</span>{% else %}<span class="badge">{{ 'expired' if e.status == 'active' else e.status }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endif %}
+
+{% if can_manage %}
+<form class="card section" method="post" action="{{ url_for('billing_portal') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <p style="margin-top:0">Update your payment method, download invoices or cancel your subscription.</p>
+  <button type="submit" class="secondary">Manage subscription</button>
+</form>
+{% endif %}
+
+{% if not customer.email and cfg.enable_email_login %}
+<form class="card section" method="post" action="{{ url_for('login_page') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <p style="margin-top:0">Save your access to an email address so you can use it on other devices.</p>
+  <div class="row">
+    <div><input type="email" name="email" placeholder="you@example.com" required></div>
+    <button type="submit">Send link</button>
+  </div>
+</form>
+{% endif %}
+
+<div class="links">
+  <a href="{{ url_for('index', stay=1) }}">Options</a>
+  <form method="post" action="{{ url_for('logout') }}" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button type="submit" class="secondary small">Sign out</button>
+  </form>
+</div>
+{% endblock %}

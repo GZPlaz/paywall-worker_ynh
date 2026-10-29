@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: pip install -r src/requirements.txt pytest shellcheck-py
+      - name: Python tests
+        run: pytest -q tests
+      - name: Worker tests
+        run: node --test tests/worker.test.mjs
+      - name: Shellcheck
+        working-directory: scripts
+        run: shellcheck -x -s bash -e SC1091,SC2154,SC1090 install remove upgrade backup restore change_url config _common.sh

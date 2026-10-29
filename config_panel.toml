@@ -1,0 +1,331 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/config_panel.v1.schema.json
+
+version = "1.0"
+
+[main]
+name.en = "Paywall"
+
+    [main.info]
+    name.en = ""
+
+        [main.info.admin_info]
+        type = "alert"
+        style = "info"
+        ask.en = "Codes, customers and Cloudflare deployment are managed from the app's admin page (/admin)."
+
+    [main.page]
+    name.en = "Paywall page"
+
+        [main.page.paywall_title]
+        ask.en = "Title"
+        type = "string"
+        default = "Members only"
+
+        [main.page.paywall_description]
+        ask.en = "Description"
+        type = "text"
+        default = "Support this site to unlock full access to every page."
+
+        [main.page.accent_color]
+        ask.en = "Accent color"
+        type = "color"
+        default = "#4f46e5"
+
+        [main.page.support_email]
+        ask.en = "Support email shown on the page"
+        type = "email"
+        optional = true
+
+        [main.page.show_codes_field]
+        ask.en = "Show the 'Have a code?' field"
+        type = "boolean"
+        default = true
+
+    [main.protection]
+    name.en = "Protected sites"
+
+        [main.protection.protected_routes]
+        ask.en = "Protected routes (one per line)"
+        type = "text"
+        optional = true
+        help.en = "Cloudflare route patterns, e.g. blog.example.com/* or example.com/premium/*. The domains must be proxied by Cloudflare (orange cloud) and must not include the paywall's own domain."
+
+        [main.protection.bypass_paths]
+        ask.en = "Public paths (one per line)"
+        type = "text"
+        optional = true
+        default = "/robots.txt\n/favicon.ico\n/.well-known/*"
+        help.en = "Paths on the protected sites that stay free. End with * for a prefix match, e.g. /assets/*"
+
+        [main.protection.access_recheck_hours]
+        ask.en = "Re-check access every (hours)"
+        type = "number"
+        min = 1
+        max = 8760
+        default = 24
+        help.en = "How long the access cookie on the protected site is valid before the visitor is silently re-checked against the paywall. Shorter = cancellations and revocations apply faster."
+
+        [main.protection.session_days]
+        ask.en = "Remember paying visitors for (days)"
+        type = "number"
+        min = 1
+        max = 3650
+        default = 365
+
+        [main.protection.callback_prefix]
+        ask.en = "Reserved path on protected sites"
+        type = "string"
+        default = "/__paywall"
+        pattern.regexp = "^/[A-Za-z0-9_-]+$"
+        pattern.error = "Must look like /__paywall"
+
+[pricing]
+name.en = "Pricing"
+
+    [pricing.general]
+    name.en = ""
+
+        [pricing.general.currency]
+        ask.en = "Currency"
+        type = "select"
+        choices = ["usd", "eur", "gbp", "cad", "aud", "nzd", "chf", "sek", "nok", "dkk", "pln", "czk", "brl", "mxn", "inr", "sgd", "hkd", "jpy", "krw"]
+        default = "usd"
+
+    [pricing.one_time]
+    name.en = "One-time payment"
+
+        [pricing.one_time.enable_one_time]
+        ask.en = "Offer a one-time payment"
+        type = "boolean"
+        default = true
+
+        [pricing.one_time.one_time_name]
+        ask.en = "Name"
+        type = "string"
+        default = "Lifetime access"
+        visible = "enable_one_time"
+
+        [pricing.one_time.one_time_price]
+        ask.en = "Price"
+        type = "string"
+        default = "9.00"
+        visible = "enable_one_time"
+        pattern.regexp = "^[0-9]+([.,][0-9]{1,2})?$"
+        pattern.error = "Use a number like 9 or 9.99"
+
+        [pricing.one_time.one_time_access_days]
+        ask.en = "Access length in days (0 = forever)"
+        type = "number"
+        min = 0
+        default = 0
+        visible = "enable_one_time"
+
+    [pricing.subscription]
+    name.en = "Subscription"
+
+        [pricing.subscription.enable_subscription]
+        ask.en = "Offer a subscription"
+        type = "boolean"
+        default = true
+
+        [pricing.subscription.subscription_name]
+        ask.en = "Name"
+        type = "string"
+        default = "Membership"
+        visible = "enable_subscription"
+
+        [pricing.subscription.subscription_price]
+        ask.en = "Price per period"
+        type = "string"
+        default = "4.00"
+        visible = "enable_subscription"
+        pattern.regexp = "^[0-9]+([.,][0-9]{1,2})?$"
+        pattern.error = "Use a number like 4 or 4.99"
+
+        [pricing.subscription.subscription_interval]
+        ask.en = "Billing period"
+        type = "select"
+        choices.day = "Daily"
+        choices.week = "Weekly"
+        choices.month = "Monthly"
+        choices.year = "Yearly"
+        default = "month"
+        visible = "enable_subscription"
+
+        [pricing.subscription.subscription_trial_days]
+        ask.en = "Free trial (days, 0 = none)"
+        type = "number"
+        min = 0
+        max = 730
+        default = 0
+        visible = "enable_subscription"
+
+    [pricing.pass]
+    name.en = "Time pass"
+
+        [pricing.pass.enable_pass]
+        ask.en = "Offer a time-limited pass (e.g. a day pass)"
+        type = "boolean"
+        default = false
+
+        [pricing.pass.pass_name]
+        ask.en = "Name"
+        type = "string"
+        default = "Day pass"
+        visible = "enable_pass"
+
+        [pricing.pass.pass_price]
+        ask.en = "Price"
+        type = "string"
+        default = "1.00"
+        visible = "enable_pass"
+        pattern.regexp = "^[0-9]+([.,][0-9]{1,2})?$"
+        pattern.error = "Use a number like 1 or 1.50"
+
+        [pricing.pass.pass_hours]
+        ask.en = "Pass length (hours)"
+        type = "number"
+        min = 1
+        default = 24
+        visible = "enable_pass"
+
+    [pricing.pwyw]
+    name.en = "Pay what you want"
+
+        [pricing.pwyw.enable_pwyw]
+        ask.en = "Let visitors choose their price"
+        type = "boolean"
+        default = false
+
+        [pricing.pwyw.pwyw_name]
+        ask.en = "Name"
+        type = "string"
+        default = "Pay what you want"
+        visible = "enable_pwyw"
+
+        [pricing.pwyw.pwyw_min_price]
+        ask.en = "Minimum price"
+        type = "string"
+        default = "2.00"
+        visible = "enable_pwyw"
+        pattern.regexp = "^[0-9]+([.,][0-9]{1,2})?$"
+        pattern.error = "Use a number like 2 or 2.50"
+
+        [pricing.pwyw.pwyw_suggested_price]
+        ask.en = "Suggested price"
+        type = "string"
+        default = "5.00"
+        visible = "enable_pwyw"
+        pattern.regexp = "^[0-9]+([.,][0-9]{1,2})?$"
+        pattern.error = "Use a number like 5 or 5.50"
+
+        [pricing.pwyw.pwyw_access_days]
+        ask.en = "Access length in days (0 = forever)"
+        type = "number"
+        min = 0
+        default = 0
+        visible = "enable_pwyw"
+
+[payments]
+name.en = "Payments"
+
+    [payments.provider]
+    name.en = "Payment provider"
+
+        [payments.provider.payment_provider]
+        ask.en = "How do visitors pay?"
+        type = "select"
+        choices.stripe = "Stripe"
+        choices.none = "No online payment (access codes only)"
+        default = "stripe"
+
+        [payments.provider.stripe_secret_key]
+        ask.en = "Stripe secret key"
+        type = "password"
+        optional = true
+        visible = "payment_provider == 'stripe'"
+        help.en = "From https://dashboard.stripe.com/apikeys (sk_live_... or sk_test_...). A restricted key needs write access to Checkout Sessions, Coupons, Customer portal and read access to Subscriptions."
+
+        [payments.provider.stripe_webhook_secret]
+        ask.en = "Stripe webhook signing secret"
+        type = "password"
+        optional = true
+        visible = "payment_provider == 'stripe'"
+        help.en = "whsec_... Create a webhook endpoint in Stripe (URL below) for the events checkout.session.completed, checkout.session.async_payment_succeeded, customer.subscription.updated, customer.subscription.deleted and invoice.paid."
+
+        [payments.provider.webhook_info]
+        type = "alert"
+        style = "info"
+        ask.en = "Stripe webhook URL"
+        visible = "payment_provider == 'stripe'"
+
+    [payments.email]
+    name.en = "Restore access by email"
+
+        [payments.email.enable_email_login]
+        ask.en = "Let customers get a sign-in link by email"
+        type = "boolean"
+        default = true
+        help.en = "Lets people regain access on a new device. Emails are sent through this server's mail system."
+
+        [payments.email.mail_from]
+        ask.en = "Sender address"
+        type = "email"
+        optional = true
+        visible = "enable_email_login"
+        help.en = "Defaults to noreply@<paywall domain>"
+
+[cloudflare]
+name.en = "Cloudflare"
+
+    [cloudflare.api]
+    name.en = "Cloudflare API"
+
+        [cloudflare.api.cf_api_token]
+        ask.en = "API token"
+        type = "password"
+        optional = true
+        help.en = "Create it at https://dash.cloudflare.com/profile/api-tokens with: Account > Workers Scripts > Edit, Zone > Workers Routes > Edit, Zone > Zone > Read."
+
+        [cloudflare.api.cf_account_id]
+        ask.en = "Account ID"
+        type = "string"
+        optional = true
+        help.en = "Shown in the right sidebar of any zone overview page in the Cloudflare dashboard."
+
+        [cloudflare.api.cf_zone_id]
+        ask.en = "Zone ID (optional)"
+        type = "string"
+        optional = true
+        help.en = "Leave empty to detect it from the protected routes. Set it if the token cannot list zones."
+
+        [cloudflare.api.worker_name]
+        ask.en = "Worker name"
+        type = "string"
+        optional = true
+        pattern.regexp = "^[a-z0-9][a-z0-9-]{0,62}$"
+        pattern.error = "Lowercase letters, digits and dashes only"
+        help.en = "Defaults to the app id, e.g. paywall-worker"
+
+        [cloudflare.api.cf_auto_deploy]
+        ask.en = "Update the Worker automatically when settings are saved"
+        type = "boolean"
+        default = true
+
+        [cloudflare.api.cf_cleanup_on_remove]
+        ask.en = "Remove the Worker and its routes when this app is uninstalled"
+        type = "boolean"
+        default = true
+
+    [cloudflare.deploy]
+    name.en = "Deployment"
+
+        [cloudflare.deploy.worker_status]
+        type = "alert"
+        style = "info"
+        ask.en = "Never deployed"
+
+        [cloudflare.deploy.deploy_worker]
+        ask.en = "Deploy / update the Worker now"
+        type = "button"
+        style = "success"

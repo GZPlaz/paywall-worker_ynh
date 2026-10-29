@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Admin{% endblock %} · {{ cfg.paywall_title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>:root { --accent: {{ cfg.accent_color }}; }</style>
+</head>
+<body>
+  <main class="wrap">
+    {% set active = request.endpoint %}
+    <nav class="admin">
+      <a href="{{ url_for('admin.dashboard') }}" class="{{ 'active' if active == 'admin.dashboard' }}">Dashboard</a>
+      <a href="{{ url_for('admin.codes_page') }}" class="{{ 'active' if active == 'admin.codes_page' }}">Codes</a>
+      <a href="{{ url_for('admin.customers_page') }}" class="{{ 'active' if active in ('admin.customers_page', 'admin.customer_page') }}">Customers</a>
+      <a href="{{ url_for('admin.cloudflare_page') }}" class="{{ 'active' if active == 'admin.cloudflare_page' }}">Cloudflare</a>
+      <span class="spacer"></span>
+      <a href="{{ url_for('index') }}" target="_blank">View paywall ↗</a>
+    </nav>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

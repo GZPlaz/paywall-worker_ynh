@@ -1,0 +1,9 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/tests.v1.schema.json
+
+test_format = 1.0
+
+[default]
+
+    # Stripe / Cloudflare credentials are configured after install, from the
+    # config panel, so the default install works without any external account.
+    args.payment_provider = "stripe"

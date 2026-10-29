@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ customer.email or customer.id }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h3 style="margin-top:0">{{ customer.email or "Anonymous customer" }}</h3>
+  <p class="muted">ID {{ customer.id }} · since {{ customer.created_at|dt }}{% if customer.stripe_customer_id %} · Stripe {{ customer.stripe_customer_id }}{% endif %}</p>
+  <p>{% if has_access %}<span class="badge ok">Has access</span> {% if until %}until {{ until|dt }}{% else %}forever{% endif %}{% else %}<span class="badge off">No access</span>{% endif %}</p>
+  <form method="post" action="{{ url_for('admin.grant') }}" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="customer_id" value="{{ customer.id }}">
+    <div><label for="days">Grant extra access (days, empty = forever)</label><input id="days" name="days" type="number" min="1"></div>
+    <div><label for="note">Note</label><input id="note" name="note"></div>
+    <button type="submit">Grant</button>
+  </form>
+</div>
+<div class="card section">
+  <div class="table-wrap"><table>
+    <tr><th>Type</th><th>Reference</th><th>Amount</th><th>From</th><th>Until</th><th>Status</th><th></th></tr>
+    {% for e in entitlements %}
+      <tr>
+        <td>{{ e.kind|replace('_', ' ') }}{% if e.code %} <span class="muted">({{ e.code }})</span>{% endif %}{% if e.note %}<br><span class="muted">{{ e.note }}</span>{% endif %}</td>
+        <td><code>{{ e.source_ref or '—' }}</code></td>
+        <td>{% if e.amount is not none %}{{ money(e.amount) if e.currency == cfg.currency else e.amount ~ ' ' ~ (e.currency or '') }}{% endif %}</td>
+        <td>{{ e.starts_at|dt }}</td>
+        <td>{{ e.expires_at|dt if e.expires_at else 'forever' }}</td>
+        <td>{% if e.status == 'active' and (not e.expires_at or e.expires_at > now) %}<span class="badge ok">active</span>{% else %}<span class="badge">{{ 'expired' if e.status == 'active' else e.status }}</span>{% endif %}</td>
+        <td>
+          {% if e.status == 'active' %}
+          <form class="inline" method="post" action="{{ url_for('admin.revoke', entitlement_id=e.id) }}" onsubmit="return confirm('Revoke this access?')">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <button class="danger small" type="submit">Revoke</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No entitlements.</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="muted">Revoking takes effect on the protected site when the visitor's access cookie is next re-checked (at most {{ cfg.access_recheck_hours }} h).</p>
+</div>
+{% endblock %}

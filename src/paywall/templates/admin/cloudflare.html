@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+{% block title %}Cloudflare{% endblock %}
+{% block content %}
+<div class="grid">
+  <div class="card">
+    <h3 style="margin-top:0">Worker</h3>
+    <p><b>{{ cfg.worker_name }}</b><br><span class="muted">{{ status }}</span></p>
+    <p>Routes:</p>
+    <ul>{% for pattern, _, _ in routes %}<li><code>{{ pattern }}</code></li>{% else %}<li class="muted">none configured</li>{% endfor %}</ul>
+    <form method="post" action="{{ url_for('admin.deploy_worker') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" {% if not cfg.cloudflare_ready or not routes %}disabled{% endif %}>Deploy / update Worker</button>
+    </form>
+    {% if not cfg.cloudflare_ready %}<p class="muted">Add a Cloudflare API token and account ID in the config panel to deploy automatically.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Manual deployment</h3>
+    <p>Prefer <code>wrangler</code> or the Cloudflare dashboard? Download the Worker and its configuration:</p>
+    <p><a class="button secondary small" href="{{ url_for('admin.download_worker') }}">paywall-worker.js</a>
+       <a class="button secondary small" href="{{ url_for('admin.download_wrangler') }}">wrangler.toml</a></p>
+    <details>
+      <summary>Show Worker secrets</summary>
+      <label>PAYWALL_SECRET</label><pre>{{ cfg.signing_secret }}</pre>
+      <label>ORIGIN_SECRET</label><pre>{{ cfg.origin_secret }}</pre>
+    </details>
+  </div>
+</div>
+<div class="card section">
+  <h3 style="margin-top:0">Lock down the origin (recommended)</h3>
+  <p>The Worker only protects traffic that goes through Cloudflare. Someone who knows your server's IP could bypass it.
+     Every request the Worker forwards carries an <code>X-Paywall-Origin-Key</code> header; reject requests without it on the origin.
+     For an app hosted on YunoHost, add this to <code>/etc/nginx/conf.d/&lt;protected domain&gt;.d/&lt;app&gt;.conf</code> inside the <code>location</code> block:</p>
+  <pre>if ($http_x_paywall_origin_key != "{{ cfg.origin_secret }}") { return 403; }</pre>
+  <p class="muted">Variables passed to the Worker: {% for k, v in worker_vars.items() %}<code>{{ k }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+</div>
+{% endblock %}

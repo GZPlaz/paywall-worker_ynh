@@ -1,0 +1,97 @@
+{% extends "admin/base.html" %}
+{% block title %}Codes{% endblock %}
+{% block content %}
+<form class="card" method="post" action="{{ url_for('admin.create_code') }}" id="code-form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h3 style="margin-top:0">New code</h3>
+  <div class="row">
+    <div>
+      <label for="kind">Type</label>
+      <select id="kind" name="kind">
+        <option value="percent">Percentage discount</option>
+        <option value="fixed">Fixed amount discount</option>
+        <option value="free">Free access (bypass payment)</option>
+      </select>
+    </div>
+    <div data-kind="percent"><label for="percent">Percent off</label><input id="percent" name="percent" type="number" min="1" max="100" value="20"></div>
+    <div data-kind="fixed" class="hidden"><label for="amount">Amount off ({{ cfg.currency|upper }})</label><input id="amount" name="amount" inputmode="decimal" placeholder="5.00"></div>
+    <div data-kind="free" class="hidden"><label for="grant_days">Access length (days, empty = forever)</label><input id="grant_days" name="grant_days" type="number" min="1"></div>
+  </div>
+  <div class="row section" style="margin-top:14px">
+    <div><label for="code">Code (empty = random)</label><input id="code" name="code" autocapitalize="characters" placeholder="SPRING25"></div>
+    <div><label for="count">How many codes</label><input id="count" name="count" type="number" min="1" max="500" value="1"></div>
+    <div><label for="max_uses">Max uses per code (empty = unlimited)</label><input id="max_uses" name="max_uses" type="number" min="1"></div>
+    <div><label for="expires">Expires on (optional)</label><input id="expires" name="expires" type="date"></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <fieldset class="checks">
+      <legend>Valid for (none checked = all options)</legend>
+      {% for plan in plans %}
+        <label><input type="checkbox" name="plans" value="{{ plan.id }}"> {{ plan.name }}</label>
+      {% endfor %}
+    </fieldset>
+    <div data-kind="percent fixed">
+      <label for="duration">On subscriptions, the discount applies</label>
+      <select id="duration" name="duration">
+        <option value="once">To the first payment</option>
+        <option value="repeating">For a number of months</option>
+        <option value="forever">To every payment</option>
+      </select>
+    </div>
+    <div data-kind="percent fixed"><label for="duration_months">Months (if repeating)</label><input id="duration_months" name="duration_months" type="number" min="1"></div>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <div><label for="note">Note (internal)</label><input id="note" name="note" placeholder="Newsletter promo"></div>
+    <button type="submit">Create</button>
+  </div>
+</form>
+
+<div class="card section">
+  <div class="row" style="align-items:center">
+    <h3 style="margin:0">Codes</h3>
+    <a class="button secondary small" href="{{ url_for('admin.export_codes') }}">Export CSV</a>
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>Code</th><th>Effect</th><th>Options</th><th>Uses</th><th>Expires</th><th>Status</th><th></th></tr>
+    {% for c in codes %}
+      <tr>
+        <td><code>{{ c.code }}</code>{% if c.note %}<br><span class="muted">{{ c.note }}</span>{% endif %}</td>
+        <td>{{ summary(c) }}</td>
+        <td>{{ c.plans or 'all' }}</td>
+        <td>{{ c.uses }}{% if c.max_uses %} / {{ c.max_uses }}{% endif %}</td>
+        <td>{{ c.expires_at|dt if c.expires_at else '—' }}</td>
+        <td>
+          {% if not c.active %}<span class="badge off">disabled</span>
+          {% elif c.expires_at and c.expires_at <= now %}<span class="badge">expired</span>
+          {% elif c.max_uses and c.uses >= c.max_uses %}<span class="badge">used up</span>
+          {% else %}<span class="badge ok">active</span>{% endif %}
+        </td>
+        <td style="white-space:nowrap">
+          <form class="inline" method="post" action="{{ url_for('admin.toggle_code', code=c.code) }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <button class="secondary small" type="submit">{{ 'Disable' if c.active else 'Enable' }}</button>
+          </form>
+          <form class="inline" method="post" action="{{ url_for('admin.delete_code', code=c.code) }}" onsubmit="return confirm('Delete {{ c.code }}?')">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <button class="danger small" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No codes yet.</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+<script>
+  (function () {
+    var kind = document.getElementById("kind");
+    function sync() {
+      document.querySelectorAll("[data-kind]").forEach(function (el) {
+        el.classList.toggle("hidden", el.getAttribute("data-kind").split(" ").indexOf(kind.value) === -1);
+      });
+    }
+    kind.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

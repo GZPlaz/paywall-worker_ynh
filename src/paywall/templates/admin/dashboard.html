@@ -1,0 +1,58 @@
+{% extends "admin/base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="stats">
+  <div class="card stat"><span class="muted">People with access</span><b>{{ stats.active }}</b></div>
+  <div class="card stat"><span class="muted">Active subscriptions</span><b>{{ stats.subscriptions }}</b></div>
+  <div class="card stat"><span class="muted">Customers</span><b>{{ stats.customers }}</b></div>
+  <div class="card stat"><span class="muted">One-off revenue</span>
+    <b>{% for r in stats.revenue %}{{ "%.2f"|format(r.total / 100) if r.currency not in ('jpy', 'krw') else r.total }} {{ (r.currency or '')|upper }}{% if not loop.last %}<br>{% endif %}{% else %}0{% endfor %}</b></div>
+</div>
+
+<div class="grid section">
+  <div class="card">
+    <h3 style="margin-top:0">Setup</h3>
+    <ul class="checklist">
+      {% for label, ok, where in checklist %}
+        <li>{% if ok %}✅{% else %}⚠️{% endif %} {{ label }}{% if not ok %} <span class="muted">— {{ where }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted">Settings live in the YunoHost admin: Applications → this app → Configuration.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Offers</h3>
+    {% for plan, price, desc in plans %}
+      <p><b>{{ plan.name }}</b> — {{ price }}<br><span class="muted">{{ desc }}</span></p>
+    {% else %}
+      <p class="muted">No paid option enabled. Visitors can only get in with a free access code.</p>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Endpoints</h3>
+    <label>Paywall</label><pre>{{ cfg.public_url }}/</pre>
+    {% if cfg.payment_provider == 'stripe' %}
+    <label>Stripe webhook</label><pre>{{ cfg.public_url }}/webhook/stripe</pre>
+    {% endif %}
+    <label>Cloudflare Worker</label><p style="margin:0">{{ cf_status }}</p>
+  </div>
+</div>
+
+<div class="card section">
+  <h3 style="margin-top:0">Recent activity</h3>
+  <div class="table-wrap"><table>
+    <tr><th>When</th><th>Customer</th><th>Type</th><th>Amount</th><th>Until</th><th>Status</th></tr>
+    {% for e in recent %}
+      <tr>
+        <td>{{ e.created_at|dt }}</td>
+        <td><a href="{{ url_for('admin.customer_page', customer_id=e.customer_id) }}">{{ e.email or e.customer_id }}</a></td>
+        <td>{{ e.kind|replace('_', ' ') }}{% if e.code %} <span class="muted">({{ e.code }})</span>{% endif %}</td>
+        <td>{% if e.amount is not none %}{{ money(e.amount) if e.currency == cfg.currency else e.amount ~ ' ' ~ (e.currency or '') }}{% endif %}</td>
+        <td>{{ e.expires_at|dt if e.expires_at else 'forever' }}</td>
+        <td>{% if e.status == 'active' and (not e.expires_at or e.expires_at > now) %}<span class="badge ok">active</span>{% else %}<span class="badge">{{ 'expired' if e.status == 'active' else e.status }}</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nothing yet.</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+#!/bin/bash
+
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# STOP SYSTEMD SERVICE
+#=================================================
+ynh_script_progression "Stopping $app's systemd service..."
+
+ynh_systemctl --service="$app" --action="stop" --log_path="$log_file"
+
+#=================================================
+# UPGRADE THE APP
+#=================================================
+ynh_script_progression "Upgrading source files..."
+
+_install_sources
+_install_cli
+_set_permissions
+_install_python_deps
+
+#=================================================
+# UPDATE THE CONFIGURATION
+#=================================================
+ynh_script_progression "Updating configuration..."
+
+_set_default_settings
+_write_config
+_paywall_cli init-db
+
+#=================================================
+# REAPPLY SYSTEM CONFIGURATION
+#=================================================
+ynh_script_progression "Upgrading system configurations related to $app..."
+
+ynh_config_add_nginx
+
+ynh_config_add_systemd
+yunohost service add "$app" --description="Paywall for Cloudflare-proxied sites" --log="$log_file"
+
+ynh_config_add_logrotate "$log_file"
+
+#=================================================
+# START SYSTEMD SERVICE
+#=================================================
+ynh_script_progression "Starting $app's systemd service..."
+
+ynh_systemctl --service="$app" --action="start" --log_path="$log_file" --wait_until="Listening at"
+
+# Ship the new Worker code to Cloudflare as well
+_auto_deploy_worker
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression "Upgrade of $app completed"
