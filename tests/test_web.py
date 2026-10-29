@@ -378,3 +378,8 @@ def test_fresh_install_root_points_admins_to_setup(tmp_path):
     fresh = create_app(make_config(tmp_path))
     html = https_client(fresh).get("/").get_data(as_text=True)
     assert "The paywall is running" in html and "Open the admin pages" in html
+
+
+def test_webhook_url_opened_in_a_browser_explains_itself(client):
+    resp = client.get("/webhook/stripe")
+    assert resp.status_code == 200 and "for Stripe only" in resp.get_data(as_text=True)

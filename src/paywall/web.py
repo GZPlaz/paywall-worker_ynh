@@ -441,6 +441,17 @@ def create_app(conf=None, stripe_factory=None):
             session["return"] = fallback
         return handoff(customer_id, site)
 
+    @app.get("/webhook/stripe")
+    def stripe_webhook_info():
+        # Stripe only POSTs here; tell people who open the URL in a browser
+        # that this is expected instead of showing "Method Not Allowed".
+        return render_template(
+            "message.html", title="Stripe webhook endpoint",
+            message="This address is for Stripe only: it receives payment notifications as POST requests. "
+                    "Opening it in a browser does nothing, and that is expected. Paste this URL in Stripe "
+                    "(Developers, Webhooks) and the signing secret in the app's config panel.",
+        )
+
     @app.post("/webhook/stripe")
     def stripe_webhook():
         try:
