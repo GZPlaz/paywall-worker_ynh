@@ -9,7 +9,9 @@ import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.stripe.com/v1"
-API_VERSION = "2024-06-20"
+# Webhook events arrive in the webhook endpoint's API version (the latest one
+# for new endpoints), so requests use the latest version too.
+API_VERSION = "2026-10-28.endive"
 
 
 class StripeError(Exception):
@@ -75,6 +77,12 @@ class Stripe:
 
     def get_subscription(self, subscription_id):
         return self.request("GET", f"/subscriptions/{urllib.parse.quote(subscription_id)}")
+
+    def create_product(self, params):
+        return self.request("POST", "/products", params)
+
+    def update_product(self, product_id, params):
+        return self.request("POST", f"/products/{urllib.parse.quote(product_id)}", params)
 
     def create_coupon(self, params):
         return self.request("POST", "/coupons", params)

@@ -219,3 +219,12 @@ def test_stripe_webhook_signature():
 def test_subscription_period_end_shapes():
     assert subscription_period_end({"current_period_end": 10}) == 10
     assert subscription_period_end({"items": {"data": [{"current_period_end": 20}]}}) == 20
+
+
+def test_tax_settings_are_validated(tmp_path):
+    from paywall import config
+    with pytest.raises(config.ConfigError):
+        make_config(tmp_path, stripe_tax_code="general")
+    with pytest.raises(config.ConfigError):
+        make_config(tmp_path, stripe_tax_behavior="sometimes")
+    assert make_config(tmp_path, stripe_tax_code="").integration_identifier == make_config(tmp_path).integration_identifier

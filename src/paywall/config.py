@@ -35,6 +35,12 @@ SCHEMA = {
     "payment_provider": ("str", "stripe"),
     "stripe_secret_key": ("str", ""),
     "stripe_webhook_secret": ("str", ""),
+    # Invoicing and Stripe Tax
+    "stripe_invoices": ("bool", True),
+    "stripe_automatic_tax": ("bool", False),
+    "stripe_tax_behavior": ("str", "account_default"),
+    "stripe_tax_code": ("str", ""),
+    "stripe_collect_tax_ids": ("bool", False),
     # Email login ("restore my access" magic links)
     "enable_email_login": ("bool", True),
     "mail_from": ("str", ""),
@@ -89,6 +95,7 @@ CURRENCIES = {
 }
 ZERO_DECIMAL_CURRENCIES = {"jpy", "krw"}
 PAYMENT_PROVIDERS = {"stripe", "none"}
+TAX_BEHAVIORS = {"account_default", "inclusive", "exclusive"}
 
 
 class ConfigError(ValueError):
@@ -151,6 +158,10 @@ def normalize(values):
         raise ConfigError(f"currency: unsupported currency '{cfg['currency']}'")
     if cfg["payment_provider"] not in PAYMENT_PROVIDERS:
         raise ConfigError("payment_provider: must be 'stripe' or 'none'")
+    if cfg["stripe_tax_behavior"] not in TAX_BEHAVIORS:
+        raise ConfigError("stripe_tax_behavior: must be account_default, inclusive or exclusive")
+    if cfg["stripe_tax_code"] and not re.fullmatch(r"txcd_\d{8}", cfg["stripe_tax_code"]):
+        raise ConfigError("stripe_tax_code: must look like txcd_12345678 (or be empty)")
     if not re.fullmatch(r"/[A-Za-z0-9_-]+", cfg["callback_prefix"]):
         raise ConfigError("callback_prefix: must look like /__paywall")
     cfg["session_days"] = max(1, cfg["session_days"])
@@ -185,6 +196,13 @@ class Config(dict):
         """Tags the Stripe objects created by this paywall. Derived from the
         signing secret so it survives domain changes."""
         return "pw_" + hashlib.sha256(self["signing_secret"].encode()).hexdigest()[:16]
+
+    @property
+    def integration_identifier(self):
+        """Label for Checkout Sessions in the Stripe Dashboard, with the
+        8-letter suffix Stripe asks for (stable per installation)."""
+        digest = hashlib.sha256(("integration:" + self["signing_secret"]).encode()).digest()
+        return "paywall-worker-" + "".join(chr(97 + b % 26) for b in digest[:8])
 
     @property
     def stripe_ready(self):

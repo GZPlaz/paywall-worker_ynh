@@ -134,6 +134,14 @@ MIGRATIONS = [
         value TEXT
     );
     """,
+    # v3: one Stripe Product per offer (for tax codes and readable invoices),
+    # and the payment behind one-off purchases (to act on refunds/disputes).
+    """
+    ALTER TABLE offers ADD COLUMN stripe_product_id TEXT;
+    ALTER TABLE offers ADD COLUMN stripe_product_key TEXT;
+    ALTER TABLE entitlements ADD COLUMN payment_intent TEXT;
+    CREATE INDEX entitlements_payment_intent ON entitlements(payment_intent);
+    """,
 ]
 
 

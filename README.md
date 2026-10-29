@@ -4,7 +4,7 @@
 
 Put a paywall in front of any Cloudflare-proxied site: one-time payments, subscriptions, time passes, pay-what-you-want, discount codes and free access codes.
 
-**Shipped version:** 1.1.2~ynh1
+**Shipped version:** 1.2.0~ynh1
 
 ## Overview
 
@@ -47,7 +47,7 @@ One paywall protects any number of **sites**. Each site has its own paywall page
 sudo yunohost app install https://github.com/GZPlaz/paywall-worker_ynh
 ```
 
-Then follow [doc/POST_INSTALL.md](doc/POST_INSTALL.md) and read [doc/ADMIN.md](doc/ADMIN.md).
+Then follow [doc/POST_INSTALL.md](doc/POST_INSTALL.md), set up Stripe with [doc/STRIPE.md](doc/STRIPE.md) (payments, invoicing, Stripe Tax) and read [doc/ADMIN.md](doc/ADMIN.md).
 
 ## Development
 

@@ -3,7 +3,7 @@ The paywall is installed at https://__DOMAIN____PATH__ and its admin pages are a
 To finish the setup:
 
 1. In **Applications → __APP__ → Configuration** (YunoHost web admin):
-   - **Payments**: paste your Stripe secret key. In Stripe, create a webhook endpoint for `https://__DOMAIN____PATH__/webhook/stripe` with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.paid`, then paste its signing secret.
+   - **Payments**: paste a Stripe restricted API key. In Stripe, create a webhook endpoint for `https://__DOMAIN____PATH__/webhook/stripe` with the events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `charge.refunded` and `charge.dispute.created`, then paste its signing secret. Tax and invoice options are in the same tab; the full Stripe setup (sandbox, key permissions, Stripe Tax) is in the app's `doc/STRIPE.md`.
    - **Cloudflare**: paste your API token and account ID.
 2. In the admin pages (`/admin`):
    - **Sites**: add one site per website to protect, with its routes (e.g. `blog.example.com/*`), page text and button color.

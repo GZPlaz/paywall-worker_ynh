@@ -18,6 +18,8 @@ class FakeStripe:
         self.subscriptions = {}
         self.coupons = []
         self.created = []
+        self.products = []
+        self.product_updates = []
 
     def create_checkout_session(self, params):
         sid = f"cs_test_{len(self.sessions) + 1}"
@@ -32,7 +34,8 @@ class FakeStripe:
 
     def complete(self, sid, email="buyer@example.com"):
         s = self.sessions[sid]
-        s.update(status="complete", payment_status="paid", customer="cus_1", customer_details={"email": email})
+        s.update(status="complete", payment_status="paid", customer="cus_1", customer_details={"email": email},
+                 payment_intent=None if s["mode"] == "subscription" else f"pi_{sid}")
         if s["mode"] == "subscription":
             sub = {"id": "sub_1", "status": "active", "current_period_end": int(time.time()) + 30 * 86400,
                    "metadata": s["metadata"]}
@@ -45,6 +48,14 @@ class FakeStripe:
 
     def get_subscription(self, sub_id):
         return self.subscriptions[sub_id]
+
+    def create_product(self, params):
+        self.products.append(dict(params))
+        return {"id": f"prod_{len(self.products)}"}
+
+    def update_product(self, product_id, params):
+        self.product_updates.append((product_id, dict(params)))
+        return {"id": product_id}
 
     def create_coupon(self, params):
         self.coupons.append(params)
@@ -383,3 +394,83 @@ def test_fresh_install_root_points_admins_to_setup(tmp_path):
 def test_webhook_url_opened_in_a_browser_explains_itself(client):
     resp = client.get("/webhook/stripe")
     assert resp.status_code == 200 and "for Stripe only" in resp.get_data(as_text=True)
+
+
+def test_checkout_uses_one_stripe_product_per_offer(app, client, stripe):
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": offer(app, "one_time")})
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": offer(app, "one_time")})
+    client.post("/s/news/checkout", data={"csrf": csrf(client, "/s/news?stay=1"), "plan": offer(app, "subscription")})
+    assert [p["name"] for p in stripe.products] == ["Lifetime access", "Membership"]
+    assert stripe.created[0]["line_items"][0]["price_data"]["product"] == "prod_1"
+    assert stripe.created[1]["line_items"][0]["price_data"]["product"] == "prod_1"  # reused
+    assert stripe.created[2]["line_items"][0]["price_data"]["product"] == "prod_2"
+    params = stripe.created[0]
+    assert params["integration_identifier"].startswith("paywall-worker-")
+    assert len(params["integration_identifier"].rsplit("-", 1)[1]) == 8
+    assert "payment_method_types" not in params  # dynamic payment methods
+    # Defaults: invoices for one-off payments, no automatic tax
+    assert params["invoice_creation"]["enabled"] is True
+    assert "automatic_tax" not in params and "tax_id_collection" not in params
+    assert "invoice_creation" not in stripe.created[2]  # subscriptions invoice on their own
+
+
+def test_tax_settings_reach_checkout(tmp_path, stripe):
+    conf = make_config(tmp_path, stripe_automatic_tax="1", stripe_tax_behavior="inclusive",
+                       stripe_tax_code="txcd_10103001", stripe_collect_tax_ids="1", stripe_invoices="0")
+    application = create_app(conf, stripe_factory=lambda _cfg: stripe)
+    made = seed(conn_for(application), conf)
+    client = https_client(application)
+    with client.session_transaction() as sess:
+        conn = conn_for(application)
+        customer = access.create_customer(conn, "returning@example.com", "cus_existing")
+        sess["customer"] = customer["id"]
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": made["one_time"].id})
+    params = stripe.created[-1]
+    assert params["automatic_tax"] == {"enabled": True}
+    assert params["tax_id_collection"] == {"enabled": True}
+    assert params["customer"] == "cus_existing"
+    assert params["customer_update"] == {"address": "auto", "name": "auto"}
+    assert params["line_items"][0]["price_data"]["tax_behavior"] == "inclusive"
+    assert stripe.products[0]["tax_code"] == "txcd_10103001"
+    assert "invoice_creation" not in params
+
+
+def test_full_refund_or_dispute_removes_one_off_access(app, client, stripe):
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": offer(app, "one_time")})
+    sid = next(iter(stripe.sessions))
+    stripe.complete(sid)
+    payload = follow_handoff(client.get(f"/checkout/success?session_id={sid}").location)
+    conn = conn_for(app)
+    assert access.access_until(conn, payload["sub"], "blog")[0]
+
+    partial = {"object": "charge", "payment_intent": f"pi_{sid}", "refunded": False}
+    body = json.dumps({"id": "evt_p", "type": "charge.refunded", "data": {"object": partial}}).encode()
+    assert client.post("/webhook/stripe", data=body, headers=signed(body)).json["result"] == "ignored"
+    assert access.access_until(conn, payload["sub"], "blog")[0]
+
+    full = dict(partial, refunded=True)
+    body = json.dumps({"id": "evt_f", "type": "charge.refunded", "data": {"object": full}}).encode()
+    assert client.post("/webhook/stripe", data=body, headers=signed(body)).json["result"] == "revoked"
+    assert access.access_until(conn, payload["sub"], "blog") == (False, None)
+
+
+def test_dispute_removes_one_off_access(app, client, stripe):
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": offer(app, "pass")})
+    sid = next(iter(stripe.sessions))
+    session = stripe.complete(sid)
+    body = json.dumps({"id": "evt", "type": "checkout.session.completed", "data": {"object": session}}).encode()
+    client.post("/webhook/stripe", data=body, headers=signed(body))
+    dispute = {"object": "dispute", "payment_intent": f"pi_{sid}"}
+    body = json.dumps({"id": "evt_d", "type": "charge.dispute.created", "data": {"object": dispute}}).encode()
+    assert client.post("/webhook/stripe", data=body, headers=signed(body)).json["result"] == "revoked"
+    assert access.access_by_site(conn_for(app), session["metadata"]["paywall_customer"]) == {}
+
+
+def test_failed_delayed_payment_grants_nothing(app, client, stripe):
+    client.post("/s/blog/checkout", data={"csrf": csrf(client), "plan": offer(app, "one_time")})
+    sid = next(iter(stripe.sessions))
+    session = dict(stripe.sessions[sid], status="complete", payment_status="unpaid")
+    for etype in ("checkout.session.completed", "checkout.session.async_payment_failed"):
+        body = json.dumps({"id": "e", "type": etype, "data": {"object": session}}).encode()
+        client.post("/webhook/stripe", data=body, headers=signed(body))
+    assert access.access_by_site(conn_for(app), session["metadata"]["paywall_customer"]) == {}

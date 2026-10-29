@@ -45,6 +45,28 @@ def stripe_coupon(db, cfg, code_row, stripe=None):
     return coupon["id"]
 
 
+def stripe_product(db, cfg, plan, stripe):
+    """Return the Stripe Product for an offer, created on first use and kept
+    in sync with the offer name and the configured tax code. One Product per
+    offer keeps invoices and tax reports readable."""
+    key = f"{plan.name}|{cfg['stripe_tax_code']}"
+    row = db.execute("SELECT stripe_product_id, stripe_product_key FROM offers WHERE id = ?",
+                     (int(plan.id),)).fetchone()
+    params = {"name": plan.name[:250]}
+    if cfg["stripe_tax_code"]:
+        params["tax_code"] = cfg["stripe_tax_code"]
+    if row and row["stripe_product_id"]:
+        if row["stripe_product_key"] != key:
+            stripe.update_product(row["stripe_product_id"], params)
+            db.execute("UPDATE offers SET stripe_product_key = ? WHERE id = ?", (key, int(plan.id)))
+        return row["stripe_product_id"]
+    params["metadata"] = {"paywall_instance": cfg.instance_id, "offer": plan.id}
+    product = stripe.create_product(params)
+    db.execute("UPDATE offers SET stripe_product_id = ?, stripe_product_key = ? WHERE id = ?",
+               (product["id"], key, int(plan.id)))
+    return product["id"]
+
+
 def create_checkout(db, cfg, plan, customer, site, code_row=None, custom_amount=None, return_url=None,
                     stripe=None):
     """Create a Stripe Checkout session for ``plan`` bought from ``site`` and
@@ -67,11 +89,13 @@ def create_checkout(db, cfg, plan, customer, site, code_row=None, custom_amount=
         "access_seconds": "" if plan.access_seconds is None else str(plan.access_seconds),
         "return_url": return_url or "",
     }
-    price_data = {
-        "currency": cfg["currency"],
-        "unit_amount": amount,
-        "product_data": {"name": f"{site.title} - {plan.name}"[:250]},
-    }
+    try:
+        product_id = stripe_product(db, cfg, plan, stripe)
+    except StripeError as exc:
+        raise PaymentError(str(exc)) from exc
+    price_data = {"currency": cfg["currency"], "unit_amount": amount, "product": product_id}
+    if cfg["stripe_tax_behavior"] != "account_default":
+        price_data["tax_behavior"] = cfg["stripe_tax_behavior"]
     if plan.is_subscription:
         price_data["recurring"] = {"interval": plan.interval}
     params = {
@@ -81,11 +105,24 @@ def create_checkout(db, cfg, plan, customer, site, code_row=None, custom_amount=
         "cancel_url": f"{cfg.public_url}/s/{site.id}",
         "metadata": metadata,
         "client_reference_id": customer["id"],
+        "integration_identifier": cfg.integration_identifier,
     }
     if customer["stripe_customer_id"]:
         params["customer"] = customer["stripe_customer_id"]
     elif customer["email"]:
         params["customer_email"] = customer["email"]
+    customer_update = {}
+    if cfg["stripe_automatic_tax"]:
+        # Only collects tax where the Stripe account has an active registration.
+        params["automatic_tax"] = {"enabled": True}
+        if "customer" in params:
+            customer_update["address"] = "auto"  # tax the address entered at checkout
+    if cfg["stripe_collect_tax_ids"]:
+        params["tax_id_collection"] = {"enabled": True}
+        if "customer" in params:
+            customer_update["name"] = "auto"
+    if customer_update:
+        params["customer_update"] = customer_update
     if plan.is_subscription:
         params["subscription_data"] = {"metadata": metadata}
         if plan.trial_days:
@@ -93,6 +130,12 @@ def create_checkout(db, cfg, plan, customer, site, code_row=None, custom_amount=
     else:
         params["customer_creation"] = "always"
         params["payment_intent_data"] = {"metadata": metadata}
+        if cfg["stripe_invoices"]:
+            # Subscriptions always produce invoices; one-off payments only on request.
+            params["invoice_creation"] = {"enabled": True, "invoice_data": {
+                "description": f"{site.title}: {plan.name}"[:500],
+                "metadata": {"paywall_instance": cfg.instance_id, "offer": plan.id},
+            }}
     if code_row and code_row["kind"] in ("percent", "fixed"):
         params["discounts"] = [{"coupon": stripe_coupon(db, cfg, code_row, stripe)}]
     try:
@@ -148,8 +191,13 @@ def fulfill_checkout(db, cfg, session, stripe=None):
         existing = db.execute("SELECT 1 FROM entitlements WHERE source_ref = ?", (session["id"],)).fetchone()
         if not existing:
             kind = metadata.get("kind") or metadata.get("plan") or "one_time"
-            access.grant(db, customer["id"], kind, expires, session["id"], amount, currency, code,
-                         sites=_sites_from(metadata), offer_id=_offer_id(metadata))
+            ent = access.grant(db, customer["id"], kind, expires, session["id"], amount, currency, code,
+                               sites=_sites_from(metadata), offer_id=_offer_id(metadata))
+            payment_intent = session.get("payment_intent")
+            if isinstance(payment_intent, dict):
+                payment_intent = payment_intent.get("id")
+            if payment_intent:
+                db.execute("UPDATE entitlements SET payment_intent = ? WHERE id = ?", (payment_intent, ent["id"]))
     if code:
         codes.record_use(db, code, customer["id"], f"checkout:{session['id']}")
     return customer["id"]
@@ -203,6 +251,12 @@ def handle_event(db, cfg, event, stripe=None):
         ):
             obj = dict(obj, subscription=(stripe or client(cfg)).get_subscription(obj["subscription"]))
         return "fulfilled" if fulfill_checkout(db, cfg, obj, stripe) else "ignored"
+    if etype == "checkout.session.async_payment_failed":
+        # Nothing was granted: fulfillment waits for payment_status "paid".
+        log.info("Delayed payment failed for checkout session %s", obj.get("id"))
+        return "payment_failed"
+    if etype in ("charge.refunded", "charge.dispute.created"):
+        return revoke_for_payment(db, etype, obj)
     if etype.startswith("customer.subscription."):
         return "synced" if sync_subscription(db, cfg, obj) else "ignored"
     if etype in ("invoice.paid", "invoice.payment_succeeded"):
@@ -214,6 +268,29 @@ def handle_event(db, cfg, event, stripe=None):
         sub = (stripe or client(cfg)).get_subscription(sub_id)
         return "synced" if sync_subscription(db, cfg, sub) else "ignored"
     return "ignored"
+
+
+def revoke_for_payment(db, etype, obj):
+    """Remove one-off access whose payment was fully refunded or disputed.
+    Subscriptions are left alone: cancelling them in Stripe ends access via
+    customer.subscription.deleted."""
+    if etype == "charge.refunded" and not obj.get("refunded"):
+        return "ignored"  # partial refund: keep access
+    payment_intent = obj.get("payment_intent")
+    if isinstance(payment_intent, dict):
+        payment_intent = payment_intent.get("id")
+    if not payment_intent:
+        return "ignored"
+    rows = db.execute(
+        "SELECT id FROM entitlements WHERE payment_intent = ? AND status = 'active'", (payment_intent,)
+    ).fetchall()
+    reason = "refunded" if etype == "charge.refunded" else "disputed"
+    for row in rows:
+        db.execute(
+            "UPDATE entitlements SET status = 'revoked', note = ?, updated_at = ? WHERE id = ?",
+            (f"Payment {reason}", access.now(), row["id"]),
+        )
+    return "revoked" if rows else "ignored"
 
 
 def grant_free(db, cfg, code_row, customer):

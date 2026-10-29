@@ -51,24 +51,62 @@ name.en = "Payments"
         default = "stripe"
 
         [payments.provider.stripe_secret_key]
-        ask.en = "Stripe secret key"
+        ask.en = "Stripe API key"
         type = "password"
         optional = true
         visible = "payment_provider == 'stripe'"
-        help.en = "From https://dashboard.stripe.com/apikeys (sk_live_... or sk_test_...). A restricted key needs write access to Checkout Sessions, Coupons, Customer portal and read access to Subscriptions."
+        help.en = "Use a restricted key (rk_live_... or rk_test_...) from https://dashboard.stripe.com/apikeys with Write on Checkout Sessions, Products, Coupons and Customer portal, and Read on Subscriptions. Test with a sandbox key first."
 
         [payments.provider.stripe_webhook_secret]
         ask.en = "Stripe webhook signing secret"
         type = "password"
         optional = true
         visible = "payment_provider == 'stripe'"
-        help.en = "whsec_... Create a webhook endpoint in Stripe (URL below) for the events checkout.session.completed, checkout.session.async_payment_succeeded, customer.subscription.updated, customer.subscription.deleted and invoice.paid."
+        help.en = "whsec_... Create a webhook endpoint in Stripe (URL below) for the events checkout.session.completed, checkout.session.async_payment_succeeded, checkout.session.async_payment_failed, customer.subscription.updated, customer.subscription.deleted, invoice.paid, charge.refunded and charge.dispute.created."
 
         [payments.provider.webhook_info]
         type = "alert"
         style = "info"
         ask.en = "Stripe webhook URL"
         visible = "payment_provider == 'stripe'"
+
+    [payments.tax]
+    name.en = "Tax and invoices"
+    visible = "payment_provider == 'stripe'"
+
+        [payments.tax.stripe_invoices]
+        ask.en = "Create an invoice for one-time payments"
+        type = "boolean"
+        default = true
+        help.en = "Stripe emails a PDF invoice and keeps it in the customer portal. Subscriptions always get invoices. Stripe charges a small fee for invoices on one-time payments."
+
+        [payments.tax.stripe_automatic_tax]
+        ask.en = "Collect sales tax / VAT with Stripe Tax"
+        type = "boolean"
+        default = false
+        help.en = "Turn on only after setting a head office address and adding your tax registrations in Stripe (Dashboard, Tax). Without an active registration Stripe collects no tax, and shows no error."
+
+        [payments.tax.stripe_tax_behavior]
+        ask.en = "Are your prices tax-inclusive?"
+        type = "select"
+        choices.account_default = "Use the default from my Stripe Tax settings"
+        choices.inclusive = "Yes, prices include tax"
+        choices.exclusive = "No, tax is added on top"
+        default = "account_default"
+
+        [payments.tax.stripe_tax_code]
+        ask.en = "Stripe product tax code"
+        type = "string"
+        optional = true
+        pattern.regexp = "^(txcd_[0-9]{8})?$"
+        pattern.error = "Must look like txcd_12345678"
+        help.en = "Leave empty to use the preset tax code from your Stripe Tax settings. Otherwise pick the code that matches what you sell from https://docs.stripe.com/tax/tax-codes (ask your tax advisor if unsure)."
+
+        [payments.tax.stripe_collect_tax_ids]
+        ask.en = "Let business customers enter a tax ID (VAT number)"
+        type = "boolean"
+        default = false
+        help.en = "Needed for reverse-charge on cross-border B2B sales; shown on invoices."
 
     [payments.email]
     name.en = "Restore access by email"
