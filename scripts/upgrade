@@ -29,6 +29,10 @@ _install_python_deps
 #=================================================
 ynh_script_progression "Updating configuration..."
 
+# 1.0.0~ynh1 shipped an indigo default button color; move untouched installs to the new default
+if [ "$(ynh_app_setting_get --key=accent_color)" == "#4f46e5" ]; then
+    ynh_app_setting_set --key=accent_color --value="#1b2a41"
+fi
 _set_default_settings
 _write_config
 _paywall_cli init-db

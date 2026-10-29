@@ -28,7 +28,7 @@ SCHEMA = {
     # Paywall page
     "paywall_title": ("str", "Members only"),
     "paywall_description": ("text", "Support this site to unlock full access to every page."),
-    "accent_color": ("str", "#4f46e5"),
+    "accent_color": ("str", "#1b2a41"),
     "support_email": ("str", ""),
     "show_codes_field": ("bool", True),
     # Protected sites
@@ -207,6 +207,14 @@ class Config(dict):
     @property
     def routes(self):
         return parse_routes(self["protected_routes"])
+
+    @property
+    def accent_ink(self):
+        """Text color that stays readable on the owner's accent color."""
+        r, g, b = (int(self["accent_color"][i:i + 2], 16) / 255 for i in (1, 3, 5))
+        lum = sum(w * (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4)
+                  for w, c in zip((0.2126, 0.7152, 0.0722), (r, g, b)))
+        return "#111827" if lum > 0.4 else "#ffffff"
 
     @property
     def zero_decimal(self):

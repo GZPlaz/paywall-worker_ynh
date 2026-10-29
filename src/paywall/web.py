@@ -148,19 +148,41 @@ def handoff(customer_id):
 
 
 def offer_list(code_row):
+    """What each stub on the ticket shows: the big number, the line under it
+    and a button label that names the exact charge."""
     conf = cfg()
+
+    def money(amount):
+        return plans.format_money(amount, conf)
+
     offers = []
     for plan in plans.build(conf):
         applies = code_row is not None and not plan.custom_amount and (
             not codes.plan_ids(code_row) or plan.id in codes.plan_ids(code_row)
         )
-        discounted = codes.discounted(code_row, plan.amount) if applies else None
+        amount = codes.discounted(code_row, plan.amount) if applies else plan.amount
+        discounted = applies and amount != plan.amount
+        free = applies and amount == 0 and not plan.is_subscription
+        if plan.custom_amount:
+            unit, label = "or more, you choose", "Pay this amount"
+        elif plan.is_subscription:
+            unit = f"per {plan.interval}"
+            if discounted and code_row["duration"] == "once":
+                unit = f"first {plan.interval}, then {money(plan.amount)}"
+            elif discounted and code_row["duration"] == "repeating":
+                unit = f"per {plan.interval} for {code_row['duration_months']} months, then {money(plan.amount)}"
+            label = f"Start {plan.trial_days}-day free trial" if plan.trial_days else f"Subscribe for {money(amount)}"
+        else:
+            unit = "once"
+            label = f"Get it free with {code_row['code']}" if free else f"Pay {money(amount)}"
         offers.append({
             "plan": plan,
-            "price": plans.price_label(plan, conf),
-            "discounted": plans.price_label(plan, conf, discounted) if applies else None,
-            "free": applies and discounted == 0 and not plan.is_subscription,
-            "description": plans.describe(plan, conf),
+            "big": "Free" if free else money(amount),
+            "was": money(plan.amount) if discounted else None,
+            "unit": unit,
+            "label": label,
+            "free": free,
+            "terms": plans.describe(plan, conf),
             "suggested_value": _minor_to_str(plan.suggested, conf) if plan.custom_amount else None,
         })
     return offers
@@ -276,7 +298,6 @@ def create_app(conf=None, stripe_factory=None):
             return redirect(url_for("index"))
         if row["kind"] != "free":
             session["code"] = row["code"]
-            flash(f"Code {row['code']} applied: {codes.summary(row, lambda a: plans.format_money(a, cfg()))}.", "success")
             return redirect(url_for("index"))
         customer = ensure_customer()
         if codes.already_redeemed(conn, row["code"], customer["id"]):

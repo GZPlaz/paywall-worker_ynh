@@ -1,36 +1,36 @@
 {% extends "admin/base.html" %}
 {% block title %}Cloudflare{% endblock %}
 {% block content %}
-<div class="grid">
-  <div class="card">
-    <h3 style="margin-top:0">Worker</h3>
-    <p><b>{{ cfg.worker_name }}</b><br><span class="muted">{{ status }}</span></p>
-    <p>Routes:</p>
-    <ul>{% for pattern, _, _ in routes %}<li><code>{{ pattern }}</code></li>{% else %}<li class="muted">none configured</li>{% endfor %}</ul>
-    <form method="post" action="{{ url_for('admin.deploy_worker') }}">
+<div class="columns">
+  <section class="sheet">
+    <h2>Worker {{ cfg.worker_name }}</h2>
+    <p>{{ status }}</p>
+    <label style="margin-top:14px">Protected routes</label>
+    <ul class="plain mono">{% for pattern, _, _ in routes %}<li>{{ pattern }}</li>{% else %}<li class="hint">None yet. Add them in the config panel.</li>{% endfor %}</ul>
+    <form method="post" action="{{ url_for('admin.deploy_worker') }}" style="margin-top:16px">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button type="submit" {% if not cfg.cloudflare_ready or not routes %}disabled{% endif %}>Deploy / update Worker</button>
+      <button type="submit" class="btn" {% if not cfg.cloudflare_ready or not routes %}disabled{% endif %}>Deploy the Worker</button>
     </form>
-    {% if not cfg.cloudflare_ready %}<p class="muted">Add a Cloudflare API token and account ID in the config panel to deploy automatically.</p>{% endif %}
-  </div>
-  <div class="card">
-    <h3 style="margin-top:0">Manual deployment</h3>
-    <p>Prefer <code>wrangler</code> or the Cloudflare dashboard? Download the Worker and its configuration:</p>
-    <p><a class="button secondary small" href="{{ url_for('admin.download_worker') }}">paywall-worker.js</a>
-       <a class="button secondary small" href="{{ url_for('admin.download_wrangler') }}">wrangler.toml</a></p>
-    <details>
-      <summary>Show Worker secrets</summary>
-      <label>PAYWALL_SECRET</label><pre>{{ cfg.signing_secret }}</pre>
+    {% if not cfg.cloudflare_ready %}<p class="hint" style="margin-top:10px">Add a Cloudflare API token and account ID in the config panel to deploy from here.</p>{% endif %}
+  </section>
+  <section class="sheet">
+    <h2>Deploy it yourself</h2>
+    <p>For <span class="mono">wrangler</span> or the Cloudflare dashboard, download the Worker and its settings:</p>
+    <p style="margin-top:12px"><a class="btn quiet small" href="{{ url_for('admin.download_worker') }}">paywall-worker.js</a>
+       <a class="btn quiet small" href="{{ url_for('admin.download_wrangler') }}">wrangler.toml</a></p>
+    <details style="margin-top:14px">
+      <summary>Show the Worker secrets</summary>
+      <label style="margin-top:10px">PAYWALL_SECRET</label><pre>{{ cfg.signing_secret }}</pre>
       <label>ORIGIN_SECRET</label><pre>{{ cfg.origin_secret }}</pre>
     </details>
-  </div>
+  </section>
 </div>
-<div class="card section">
-  <h3 style="margin-top:0">Lock down the origin (recommended)</h3>
-  <p>The Worker only protects traffic that goes through Cloudflare. Someone who knows your server's IP could bypass it.
-     Every request the Worker forwards carries an <code>X-Paywall-Origin-Key</code> header; reject requests without it on the origin.
-     For an app hosted on YunoHost, add this to <code>/etc/nginx/conf.d/&lt;protected domain&gt;.d/&lt;app&gt;.conf</code> inside the <code>location</code> block:</p>
+<section class="sheet">
+  <h2>Close the back door</h2>
+  <p>The Worker only sees traffic that goes through Cloudflare. Anyone who knows your server's address could skip it.
+     Every request the Worker forwards carries an <span class="mono">X-Paywall-Origin-Key</span> header, so make the origin refuse requests without it.
+     For an app on YunoHost, put this line in a file included from the app's nginx <span class="mono">location</span> block, so that upgrades do not overwrite it:</p>
   <pre>if ($http_x_paywall_origin_key != "{{ cfg.origin_secret }}") { return 403; }</pre>
-  <p class="muted">Variables passed to the Worker: {% for k, v in worker_vars.items() %}<code>{{ k }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
-</div>
+  <p class="hint">Settings passed to the Worker: {% for k, v in worker_vars.items() %}<span class="mono">{{ k }}</span>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+</section>
 {% endblock %}

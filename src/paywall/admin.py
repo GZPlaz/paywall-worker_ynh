@@ -37,6 +37,21 @@ def _int_or_none(value):
     return int(value) if value.isdigit() else None
 
 
+KIND_LABELS = {
+    "one_time": "One-time payment",
+    "subscription": "Subscription",
+    "pass": "Pass",
+    "pwyw": "Pay what you want",
+    "code": "Access code",
+    "manual": "Granted by an admin",
+}
+
+
+@bp.app_template_filter("kind")
+def kind_label(kind):
+    return KIND_LABELS.get(kind, kind.replace("_", " ").capitalize())
+
+
 @bp.app_template_filter("dt")
 def format_ts(ts):
     if ts is None:
@@ -47,15 +62,15 @@ def format_ts(ts):
 def setup_checklist():
     conf = cfg()
     items = [
-        ("Protected routes configured", bool(conf.routes), "Config panel > Paywall > Protected sites"),
-        ("At least one paid option enabled", bool(plans.build(conf)), "Config panel > Pricing"),
+        ("Protected routes configured", bool(conf.routes), "Config panel, Paywall tab"),
+        ("At least one paid option enabled", bool(plans.build(conf)), "Config panel, Pricing tab"),
     ]
     if conf["payment_provider"] == "stripe":
         items += [
-            ("Stripe secret key set", bool(conf["stripe_secret_key"]), "Config panel > Payments"),
-            ("Stripe webhook secret set", bool(conf["stripe_webhook_secret"]), "Config panel > Payments"),
+            ("Stripe secret key set", bool(conf["stripe_secret_key"]), "Config panel, Payments tab"),
+            ("Stripe webhook secret set", bool(conf["stripe_webhook_secret"]), "Config panel, Payments tab"),
         ]
-    items.append(("Cloudflare API token and account ID set", conf.cloudflare_ready, "Config panel > Cloudflare"))
+    items.append(("Cloudflare API token and account ID set", conf.cloudflare_ready, "Config panel, Cloudflare tab"))
     return items
 
 
@@ -82,6 +97,7 @@ def codes_page():
         "admin/codes.html",
         codes=codes.list_all(get_db()),
         plans=plans.build(cfg()),
+        plan_names={p.id: p.name for p in plans.build(cfg())},
         summary=lambda row: codes.summary(row, lambda a: plans.format_money(a, cfg())),
         now=access.now(),
     )

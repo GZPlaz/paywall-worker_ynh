@@ -1,37 +1,38 @@
 {% extends "admin/base.html" %}
 {% block title %}Customers{% endblock %}
 {% block content %}
-<div class="grid">
-  <form class="card" method="get" action="{{ url_for('admin.customers_page') }}">
-    <h3 style="margin-top:0">Search</h3>
-    <div class="row">
-      <div><input name="q" value="{{ query }}" placeholder="Email or customer id"></div>
-      <button type="submit" class="secondary">Search</button>
+<div class="columns">
+  <form class="sheet" method="get" action="{{ url_for('admin.customers_page') }}">
+    <h2>Find someone</h2>
+    <label for="q">Email or customer id</label>
+    <div class="inline-form">
+      <input id="q" name="q" value="{{ query }}">
+      <button type="submit" class="btn quiet">Search</button>
     </div>
   </form>
-  <form class="card" method="post" action="{{ url_for('admin.grant') }}">
+  <form class="sheet" method="post" action="{{ url_for('admin.grant') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <h3 style="margin-top:0">Grant access manually</h3>
-    <div class="row">
+    <h2>Let someone in</h2>
+    <div class="fields">
       <div><label for="email">Email</label><input id="email" name="email" type="email" required></div>
-      <div><label for="days">Days (empty = forever)</label><input id="days" name="days" type="number" min="1"></div>
-      <button type="submit">Grant</button>
+      <div><label for="days">Days (empty: no end date)</label><input id="days" name="days" type="number" min="1"></div>
+      <div><button type="submit" class="btn">Grant access</button></div>
     </div>
   </form>
 </div>
-<div class="card section">
-  <div class="table-wrap"><table>
-    <tr><th>Customer</th><th>Since</th><th>Stripe</th><th>Access</th></tr>
+<section class="sheet">
+  <div class="table-wrap"><table class="data">
+    <tr><th>Customer</th><th>Since</th><th>Stripe customer</th><th>Access</th></tr>
     {% for c in customers %}
       <tr>
         <td><a href="{{ url_for('admin.customer_page', customer_id=c.id) }}">{{ c.email or c.id }}</a></td>
         <td>{{ c.created_at|dt }}</td>
-        <td>{{ c.stripe_customer_id or '—' }}</td>
-        <td>{% if c.active_count %}<span class="badge ok">active</span>{% else %}<span class="badge">none</span>{% endif %}</td>
+        <td class="mono">{{ c.stripe_customer_id or '' }}</td>
+        <td>{% if c.active_count %}<span class="state ok">yes</span>{% else %}<span class="state off">no</span>{% endif %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="4" class="muted">No customers found.</td></tr>
+      <tr><td colspan="4" class="hint">No customers found.</td></tr>
     {% endfor %}
   </table></div>
-</div>
+</section>
 {% endblock %}

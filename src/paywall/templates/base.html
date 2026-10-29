@@ -5,19 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>{% block title %}{{ cfg.paywall_title }}{% endblock %}</title>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/barlow-condensed-latin-600-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <style>:root { --accent: {{ cfg.accent_color }}; }</style>
+  <style>:root { --accent: {{ cfg.accent_color }}; --accent-ink: {{ cfg.accent_ink }}; }</style>
 </head>
 <body>
-  <main class="wrap {% block wrap_class %}{% endblock %}">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="flash {{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endwith %}
+  <main class="booth {% block booth_class %}{% endblock %}">
     {% block content %}{% endblock %}
     {% if cfg.support_email %}
-      <p class="center muted section">Questions? <a href="mailto:{{ cfg.support_email }}">{{ cfg.support_email }}</a></p>
+      <footer>Questions about access or billing: <a href="mailto:{{ cfg.support_email }}">{{ cfg.support_email }}</a></footer>
     {% endif %}
   </main>
 </body>

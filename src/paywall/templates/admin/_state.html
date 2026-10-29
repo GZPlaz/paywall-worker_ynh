@@ -1,0 +1,8 @@
+{%- macro entitlement_state(e, now) -%}
+{%- if e.status == 'active' and (not e.expires_at or e.expires_at > now) -%}<span class="state ok">active</span>
+{%- elif e.status == 'active' -%}<span class="state off">ended</span>
+{%- else -%}<span class="state off">{{ e.status }}</span>{%- endif -%}
+{%- endmacro -%}
+{%- macro amount(e) -%}
+{%- if e.amount is not none -%}{{ money(e.amount) if e.currency == cfg.currency else e.amount ~ ' ' ~ (e.currency or '')|upper }}{%- endif -%}
+{%- endmacro -%}

@@ -27,9 +27,10 @@ name.en = "Paywall"
         default = "Support this site to unlock full access to every page."
 
         [main.page.accent_color]
-        ask.en = "Accent color"
+        ask.en = "Button color"
         type = "color"
-        default = "#4f46e5"
+        default = "#1b2a41"
+        help.en = "Used for the payment buttons. Pick your site's brand color; the button text switches between dark and light to stay readable."
 
         [main.page.support_email]
         ask.en = "Support email shown on the page"

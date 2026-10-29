@@ -104,7 +104,7 @@ def test_paywall_page_lists_offers(client):
     html = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert "Lifetime access" in html and "Membership" in html and "Day pass" in html
-    assert "$9" in html and "$4 / month" in html
+    assert "Pay $9" in html and "Subscribe for $4" in html and "per month" in html
 
 
 def test_post_without_csrf_is_rejected(client):
@@ -201,7 +201,7 @@ def test_discount_code_applies_to_checkout(app, client, stripe):
     codes.create(conn, code="HALF", kind="percent", value=50)
     client.post("/code", data={"csrf": csrf(client), "code": "HALF"})
     html = client.get("/").get_data(as_text=True)
-    assert "<s>$9</s>$4.50" in html
+    assert "<s>$9</s>" in html and "Pay $4.50" in html
     client.post("/checkout", data={"csrf": csrf(client), "plan": "one_time"})
     params = stripe.created[-1]
     assert params["discounts"] == [{"coupon": "coupon_1"}]
@@ -285,3 +285,15 @@ def test_success_page_does_not_log_in_someone_else(app, client, stripe):
         sess["customer"] = access.create_customer(conn_for(app))["id"]
     resp = other.get(f"/checkout/success?session_id={sid}")
     assert resp.status_code == 200 and "Sign in" in resp.get_data(as_text=True)
+
+
+def test_subscription_discount_explains_later_price(app, client):
+    codes.create(conn_for(app), code="FIRST", kind="percent", value=50, plans="subscription")
+    client.post("/code", data={"csrf": csrf(client), "code": "FIRST"})
+    html = client.get("/").get_data(as_text=True)
+    assert "first month, then $4" in html and "Subscribe for $2" in html
+
+
+def test_button_text_stays_readable_on_light_accent(tmp_path):
+    assert make_config(tmp_path, accent_color="#f5e663").accent_ink == "#111827"
+    assert make_config(tmp_path).accent_ink == "#ffffff"
